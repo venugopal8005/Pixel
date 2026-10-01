@@ -1,0 +1,12 @@
+const assert=require('node:assert/strict');
+const {buildQueue,focus}=require('./review_queue.js');
+const segments=[{id:'a',text:'a',category:'single'},{id:'b',text:'b',category:'ambiguous',score:.8,reason:'Low model score'},{id:'c',text:'c',category:'ambiguous',reason:'Readings disagree'},{id:'d',text:'d',category:'unrecognized'}];
+const line={segments},record={lines:[line]},state={records:[record],decisions:{}};
+assert.deepEqual(buildQueue(state).items.map(x=>x.segment.id),['d','c','b']);
+let queue=buildQueue(state).items;const index=focus(queue,record,line,segments[0]);
+assert.equal(queue[index].segment.id,'a');state.decisions.a='A';
+assert.deepEqual(buildQueue(state).items.map(x=>x.segment.id),['d','c','b']);
+state.decisions.d='D';assert.deepEqual(buildQueue(state).items.map(x=>x.segment.id),['c','b']);
+assert.equal(buildQueue(state,true).items.length,4);
+assert.equal(buildQueue(state).pending,2);
+console.log('Queue priority, skipping single readings, one-off edit return, and full inspection checks passed.');

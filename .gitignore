@@ -1,0 +1,14 @@
+.venv-ocr/
+__pycache__/
+outputs/
+node_modules/
+.pixel-deck-build/
+.venv/
+venv/
+.pytest_cache/
+*.py[cod]
+.env
+.env.*
+!.env.example
+*.pem
+*.key

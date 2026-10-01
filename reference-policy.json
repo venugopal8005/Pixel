@@ -1,0 +1,11 @@
+{
+  "authority": "manual_excel",
+  "source_workbook": "D:/projects/piXeL/manual.xlsx",
+  "sheet": "Sheet1",
+  "scope": "All supplied records and fields in this workbook",
+  "output_policy": "Preserve Excel cell values exactly, including blanks, spelling, case, punctuation and formatting stored as text.",
+  "precedence": "Supersedes earlier individual corrections wherever they differ from the workbook.",
+  "review_policy": "Do not request confirmation for OCR-versus-Excel differences in this labelled sample.",
+  "evaluation_policy": "Keep OCR independent; Excel is the output target, not proof of literal source pixels. Do not replace predictions with target values when measuring OCR.",
+  "new_images": "Images without corresponding Excel labels still require inference and may contain unresolved readings. Do not invent labels from this policy."
+}
