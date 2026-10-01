@@ -1,7 +1,7 @@
 """Local v1: ordered image upload, character evidence, persisted review and Excel export."""
 import base64,io,json,re,secrets,subprocess,threading,uuid,hashlib,time,shutil
 from datetime import datetime
-import sys,webbrowser
+import sys,webbrowser,traceback
 import urllib.request
 from http.server import BaseHTTPRequestHandler,ThreadingHTTPServer
 from pathlib import Path
@@ -16,12 +16,17 @@ from extract_reference_codes import find_span
 from extract_fields import locate as numeric_fields
 from pilot_rules import HEADERS,decorate,adjacent_pages
 from field_regions import candidate_for,selected_region
+import diagnostics
 
 ROOT=Path(__file__).resolve().parent
 DATA=ROOT/'outputs/review-app';DATA.mkdir(parents=True,exist_ok=True)
 LOCK=threading.RLock();SCAN_LOCK=threading.Lock();TOKEN=secrets.token_urlsafe(32)
 LIVE_PROGRESS={}
 NODE=Path('C:/Users/Dwight/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin/node.exe')
+BUILD=diagnostics.build_info(ROOT)
+
+def diagnostic_event(kind,**details):
+    diagnostics.log_event(DATA/'_diagnostics',kind,token=TOKEN,**details)
 
 def folder(job):
     if not re.fullmatch('[a-f0-9]{32}',job):raise ValueError('Invalid job')
@@ -197,6 +202,7 @@ def scan(state):
             save(state)
             publish_progress(state,'complete',percent=100)
     except Exception as error:
+        diagnostic_event('scan_error',job=state['id'],error=str(error),traceback=traceback.format_exc())
         state['status']='error';state['error']=str(error)
         publish_progress(state,'error',percent=min(99,state.get('scan_stats',{}).get('percent',0)))
         try:save(state)
@@ -337,24 +343,36 @@ def export_data(state):
             fragments=[[r['key'],f['page'],f['id'],f['status'],json.dumps(f['box']),' | '.join(r['notes'])] for r in state['records'] for f in r.get('fragments',[])])
         for r in sheet:
             for c in r['cells']:
-                for issue in c.get('rule_issues',[]):review.append([r['key'],HEADERS[c['field']],'Field rule',str(c.get('raw_value') or ''),issue,'Needs review'])
+                for issue in c.get('rule_issues',[]):review.append([r['key'],HEADERS[c['field']],'Field rule',str(c.get('raw_value') or ''),issue,'Confirmed value; rule warning retained' if c['manual'] else 'Needs review'])
         for issue in state.get('page_issues',[]):review.append(['','','Page review',issue,'','Needs review'])
     return result
 
 class Handler(BaseHTTPRequestHandler):
     def respond(self,value,status=200,mime='application/json',filename=None):
+        request_id=getattr(self,'request_id',None) or uuid.uuid4().hex[:12]
+        route=urlparse(self.path).path
+        if (route.startswith('/api/') or route=='/download' or (route=='/image' and status>=400)) and (route!='/api/progress' or status>=400):
+            diagnostic_event('request',job=getattr(self,'diagnostic_job',None),request_id=request_id,
+                method=self.command,route=route,status=status,
+                duration_ms=round(1000*(time.monotonic()-getattr(self,'request_started',time.monotonic()))),
+                error=value.get('error') if isinstance(value,dict) else None,
+                traceback=traceback.format_exc() if status>=400 and sys.exc_info()[0] else None)
         data=json.dumps(value).encode() if mime=='application/json' else value
         self.send_response(status);self.send_header('Content-Type',mime);self.send_header('Content-Length',str(len(data)))
+        self.send_header('X-Pixel-Request-ID',request_id)
         if filename:self.send_header('Content-Disposition',f'attachment; filename="{filename}"')
         self.send_header('Cache-Control','no-store');self.send_header('X-Content-Type-Options','nosniff');self.end_headers();self.wfile.write(data)
     def do_GET(self):
+        self.request_id=uuid.uuid4().hex[:12];self.request_started=time.monotonic();self.diagnostic_job=None
         try:
             if self.headers.get('Host') not in (f'127.0.0.1:{self.server.server_port}',f'localhost:{self.server.server_port}'):return self.respond({'error':'Local access only'},403)
             u=urlparse(self.path);q=parse_qs(u.query)
+            self.diagnostic_job=q.get('job',[None])[0]
             if u.path=='/':return self.respond((ROOT/'review_sheet.html').read_bytes().replace(b'__TOKEN__',TOKEN.encode()),mime='text/html; charset=utf-8')
             if u.path=='/legacy':return self.respond((ROOT/'review_app.html').read_bytes().replace(b'__TOKEN__',TOKEN.encode()),mime='text/html; charset=utf-8')
             if u.path=='/review_sheet.js':return self.respond((ROOT/'review_sheet.js').read_bytes(),mime='text/javascript; charset=utf-8')
             if u.path=='/review_queue.js':return self.respond((ROOT/'review_queue.js').read_bytes(),mime='text/javascript; charset=utf-8')
+            if u.path=='/review_diagnostics.js':return self.respond((ROOT/'review_diagnostics.js').read_bytes(),mime='text/javascript; charset=utf-8')
             if u.path=='/api/capabilities':
                 try:
                     from rapidocr_onnxruntime import RapidOCR
@@ -379,12 +397,24 @@ class Handler(BaseHTTPRequestHandler):
             self.respond({'error':'Not found'},404)
         except Exception as e:self.respond({'error':str(e)},400)
     def do_POST(self):
+        self.request_id=uuid.uuid4().hex[:12];self.request_started=time.monotonic();self.diagnostic_job=None
         try:
             if self.headers.get('Host') not in (f'127.0.0.1:{self.server.server_port}',f'localhost:{self.server.server_port}'):return self.respond({'error':'Local access only'},403)
             if self.headers.get('X-Review-Token')!=TOKEN:return self.respond({'error':'Invalid local session'},403)
             size=int(self.headers.get('Content-Length','0'))
             if not 0<size<40_000_000:raise ValueError('Upload limit is 40 MB per request')
             data=json.loads(self.rfile.read(size));route=urlparse(self.path).path
+            self.diagnostic_job=data.get('job')
+            if route=='/api/test-report':
+                job=data.get('job');snapshot=None;live=None;state_error=None
+                if job:
+                    folder(job) # Validate even when the saved state is missing/corrupt.
+                    try:snapshot=load(job)
+                    except (OSError,ValueError) as error:state_error=str(error)
+                    try:live=get_progress(job)
+                    except (OSError,ValueError):pass
+                filename,payload=diagnostics.report_bundle(ROOT,DATA,data,snapshot,live,BUILD,NODE,TOKEN,state_error)
+                return self.respond(payload,mime='application/zip',filename=filename)
             if route=='/api/scan':
                 pages=data.get('pages',[])
                 if not 1<=len(pages)<=20:raise ValueError('Select 1–20 images')
@@ -401,6 +431,7 @@ class Handler(BaseHTTPRequestHandler):
                     if digest in hashes or source_name in names:raise ValueError('Duplicate image or filename in upload: '+source_name)
                     hashes.add(digest);names.add(source_name);decoded.append((image,source_name,digest))
                 job=uuid.uuid4().hex;folder(job).mkdir()
+                self.diagnostic_job=job
                 now=datetime.now().astimezone()
                 state=dict(id=job,project_name=project_name,schema_version=2,created_at=now.isoformat(),created_date=now.strftime('%m/%d/%Y'),
                     status='scanning',progress='Queued for scan',pages=[],records=[],decisions={},history=[],page_issues=[])

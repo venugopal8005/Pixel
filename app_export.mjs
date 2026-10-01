@@ -31,7 +31,7 @@ if(data.schema_version===2){
     if(numeric!==null&&Number.isFinite(numeric)&&Math.abs(numeric)<1e14){cell.values=[[numeric]];cell.setNumberFormat(format);}
   }
   const review=wb.worksheets.getItem('Review status'),row=data.review.length+3;
-  const legend=[['Legend','Amber: character ambiguity or field rule needs review.'],['Legend','Red: field not located. Green: user-confirmed field.'],['Legend','Blue-grey: generated metadata or remarks. White: unreviewed OCR.'],['Markers','[i/l] = alternatives; [?] = unreadable or unlocated text.'],['Source','Text regions preserve marked OCR. Source fragments retain detected blocks and their pages.'],['Rules','Formatting does not verify recognition. Full property identifiers are retained when the manual example conflicts.']];
+  const legend=[['Legend','Amber: character ambiguity or field rule needs review.'],['Legend','Red: field not located. Green: user-confirmed field; retained rule warnings appear in Review status.'],['Legend','Blue-grey: generated metadata or remarks. White: unreviewed OCR.'],['Markers','[i/l] = alternatives; [?] = unreadable or unlocated text.'],['Source','Text regions preserve marked OCR. Source fragments retain detected blocks and their pages.'],['Rules','Formatting does not verify recognition. Full property identifiers are retained when the manual example conflicts.']];
   review.getRangeByIndexes(row,0,legend.length,2).values=legend;
   review.getRangeByIndexes(row,1,legend.length,1).format.columnWidth=70;
   review.getRangeByIndexes(row,0,legend.length,2).format.wrapText=true;

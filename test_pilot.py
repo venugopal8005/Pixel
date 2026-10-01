@@ -35,13 +35,31 @@ class RuleTests(unittest.TestCase):
     def test_old_schema_stays_unchanged(self):
         state=fixture();before=copy.deepcopy(state);sheet=app.sheet_data(state)
         self.assertIsNone(sheet[0]['cells'][2]['value']);self.assertEqual(state,before)
-    def test_new_rules_keep_raw_and_mark_name_conflict(self):
+    def test_confirmed_name_conflict_stays_green_with_warning_and_remarks(self):
         state=fixture();state.update(schema_version=2,created_date='09/29/2026')
         state['field_decisions']={'record-1:4':'Mr.','record-1:5':'Clilnton Diblrmagli','record-1:8':'00123'}
         row=app.sheet_data(state)[0]['cells']
-        self.assertEqual(row[4]['status'],'uncertain');self.assertEqual(row[5]['status'],'uncertain')
+        self.assertEqual(row[4]['status'],'confirmed');self.assertEqual(row[5]['status'],'confirmed')
+        self.assertTrue(row[4]['rule_issues']);self.assertTrue(row[5]['rule_issues'])
+        self.assertIn(HEADERS[4],row[13]['value']);self.assertIn(HEADERS[5],row[13]['value'])
         self.assertEqual(row[8]['value'],'00123');self.assertEqual(row[2]['value'],'09/29/2026')
         self.assertEqual(state['field_decisions']['record-1:4'],'Mr.')
+        payload=app.export_data(state)
+        self.assertEqual(payload['statuses'][0][4],'confirmed')
+        warning=next(r for r in payload['review'] if r[1]==HEADERS[4] and r[2]=='Field rule')
+        self.assertEqual(warning[-1],'Confirmed value; rule warning retained')
+        del state['field_decisions']['record-1:4']
+        self.assertNotEqual(app.sheet_data(state)[0]['cells'][4]['status'],'confirmed')
+
+    def test_unconfirmed_rule_warning_still_requires_review(self):
+        from pilot_rules import decorate
+        state=fixture();state.update(schema_version=2,created_date='10/01/2026')
+        cells=[dict(field=i,value='[?]',plain='[?]',status='unmapped',manual=False) for i in range(37)]
+        cells[4].update(value='col',plain='col',status='read')
+        result=decorate(state,state['records'][0],cells)
+        self.assertEqual(result[4]['status'],'uncertain')
+        self.assertTrue(result[4]['rule_issues'])
+        self.assertEqual(result[4]['value'],'col')
     def test_single_column_final_page(self):
         p=Path('D:/projects/piXeL/FORM TTYFRD_8AQ/FORM TTYFRD_8AQ398_enc.jpg')
         if not p.exists():self.skipTest('Source absent')
@@ -99,14 +117,15 @@ class ApiTests(unittest.TestCase):
                 raw=io.BytesIO();Image.new('RGB',(100,100),'white').save(raw,format='PNG')
                 page={'name':'AQ1.jpg','data':base64.b64encode(raw.getvalue()).decode()}
                 with self.assertRaises(urllib.error.HTTPError):request('/api/scan',{'name':'Duplicate','pages':[page,page]})
-                self.assertFalse(list(app.DATA.iterdir()))
+                self.assertFalse(app.list_jobs())
+                self.assertFalse([p for p in app.DATA.iterdir() if p.name!='_diagnostics'])
                 with patch.object(app,'scan') as scan:
                     result=json.loads(request('/api/scan',{'name':'My pilot','pages':[page]}))
                     state=app.load(result['id']);self.assertEqual(state['project_name'],'My pilot');self.assertEqual(state['schema_version'],2)
                 state=fixture();state.update(schema_version=2,project_name='Export fixture',created_date='09/29/2026')
                 directory=app.folder(state['id']);directory.mkdir()
                 state['records'][0]['fragments']=[dict(id='p0-b0',page='page.jpg',file='page-0.png',box=[0,0,100,100],column=0,status='record_start')]
-                state['field_decisions']={'record-1:18':'903210','record-1:19':'474','record-1:20':'6.87','record-1:8':'00123','record-1:6':'=2+2'}
+                state['field_decisions']={'record-1:18':'903210','record-1:19':'474','record-1:20':'6.87','record-1:8':'00123','record-1:6':'=2+2','record-1:4':'col'}
                 app.save(state)
                 result=json.loads(request('/api/export',{'job':state['id']}));book=load_workbook(io.BytesIO(request(result['url'])))
                 sheet=book['Converted records'];self.assertEqual(sheet['A1'].value,HEADERS[0]);self.assertEqual(sheet.cell(2,19).value,903210)
@@ -114,7 +133,12 @@ class ApiTests(unittest.TestCase):
                 self.assertAlmostEqual(sheet.cell(2,21).value,.0687);self.assertEqual(sheet.cell(2,9).value,'00123')
                 self.assertNotEqual(sheet.cell(2,7).data_type,'f');self.assertIn('[0/O]',sheet.cell(2,2).value)
                 self.assertEqual(sheet.cell(2,19).fill.fgColor.rgb[-6:],'E2F2E8')
-                self.assertEqual(sheet.cell(2,6).fill.fgColor.rgb[-6:],'FDE2DE')
+                self.assertEqual(sheet.cell(2,5).value,'col')
+                self.assertEqual(sheet.cell(2,5).fill.fgColor.rgb[-6:],'E2F2E8')
+                rule_rows=[r for r in book['Review status'].values if r[1]==HEADERS[4] and r[2]=='Field rule']
+                self.assertEqual(rule_rows[0][-1],'Confirmed value; rule warning retained')
+                self.assertEqual(sheet.cell(2,6).fill.fgColor.rgb[-6:],'FFF0CC')
+                self.assertEqual(sheet.cell(2,11).fill.fgColor.rgb[-6:],'FDE2DE')
                 self.assertEqual(book['Source fragments'].max_row,2);book.close()
             finally:server.shutdown();server.server_close();t.join();app.DATA=original
 

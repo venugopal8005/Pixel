@@ -9,6 +9,10 @@ Start with [APP-GUIDE.md](APP-GUIDE.md) for the workflow and
 includes and the setup dependencies still tied to the development machine.
 The older milestone notes below retain historical counts and endpoints.
 
+For testing the app and sending reproducible issue context, use
+[TESTING-GUIDE.md](TESTING-GUIDE.md) and the **Test report** / **Report this cell**
+buttons. Reports stay local and include project data only when explicitly selected.
+
 The latest mapping demo uses `build_complete_record_map.py` and
 `complete_record_map.html`. It identifies 8 complete blocks on AQ160 and supplies
 a manually checked 37-column field-map proposal. The automatic parser locates

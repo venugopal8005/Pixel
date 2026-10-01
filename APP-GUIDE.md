@@ -1,5 +1,21 @@
 # Pixel spreadsheet review
 
+## Test reports — October 1, 2026
+
+Whole-field confirmation stays green even when a field rule disagrees. Such cells
+show **Confirmed · rule warning**; the warning remains in the cell detail, generated
+remarks, and exported Review status sheet. Green means the user confirmed the
+field, not that it passed every rule. Confirmed fields are skipped by unsure-only
+navigation. Individual character saves do not confirm an entire field.
+
+Use **Test report** in the header or **Report this cell** inside the cell editor
+to capture a pass, failure, or question with the selected cell, recent browser
+actions, API errors, runtime versions, and source fingerprint. Project images,
+OCR, and saved corrections are included only when selected. Reports download
+locally; nothing is sent automatically. Follow [TESTING-GUIDE.md](TESTING-GUIDE.md)
+for the test order and what to send with a report. Restart the app and reload the
+page after installing this update.
+
 ## Pilot update — September 29, 2026
 
 ### Scan reliability and progress

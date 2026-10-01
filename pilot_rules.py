@@ -71,11 +71,13 @@ def decorate(state,record,cells):
         cell['raw_value']=cell['value'];cell['value']=value;cell['rule_issues']=issues
         if cell['field']==5 and TITLE.fullmatch(str(cells[4].get('raw_value',''))):
             issues.append('Full name follows a title in the first-name cell. Split requires review.')
-        if issues:cell['status']='uncertain'
+        # Human confirmation and rule validity are separate facts. Keep the
+        # confirmed status while retaining validation details for review/export.
+        if issues and not cell['manual']:cell['status']='uncertain'
     # Derived remarks reflect actual issues, not example warnings in the manual.
     for remark,group in ((13,range(3,13)),(25,range(14,25)),(36,range(26,36))):
         if not cells[remark]['manual']:
-            flagged=[HEADERS[f] for f in group if cells[f]['status'] in ('uncertain','unmapped')]
+            flagged=[HEADERS[f] for f in group if cells[f]['status'] in ('uncertain','unmapped') or cells[f].get('rule_issues')]
             cells[remark]['value']='Review: '+', '.join(flagged) if flagged else 'Not Applicable'
             cells[remark]['plain']=cells[remark]['value']
     return cells
