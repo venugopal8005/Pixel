@@ -25,6 +25,54 @@ MANUAL_REGIONS={
     ('1802603512',3):(160,(591,739,786,759)),
 }
 NUM=re.compile(r'(?<![A-Za-z0-9.])\d+(?:\.\d+)?(?![A-Za-z0-9]|\.\d)')
+# These are location candidates, not corrected numbers. OCR punctuation such as
+# 6:87 or 35896-08 must remain attached to its digits so a bad glyph does not
+# change the number of fields. Field rules/review decide the actual reading.
+FINANCIAL_NUMBER = r'(?:\d+(?:,\d{3})*(?:[.:：-]\d+)?|[.:：-]\d+)'
+FINANCIAL_TOKEN = re.compile(r'(?<![\w.,:：-])' + FINANCIAL_NUMBER + r'(?![\w.,:：-])')
+SECURED_LOAN = re.compile(r'Secured\s*L[o0]an',re.I)
+
+
+def separated_text(text, separators):
+    """Insert evidence-backed spaces for location, retaining original offsets.
+
+    A missing-space OCR alternative can separate e.g. 680000 and 480. No
+    character count, expected value or reference Excel data supplies a split.
+    """
+    characters=[]; boundaries=[0]
+    for i,c in enumerate(text):
+        if i in separators and i and not text[i-1].isspace() and not c.isspace():
+            characters.append(' ');boundaries.append(i)
+        characters.append(c);boundaries.append(i+1)
+    return ''.join(characters),boundaries
+
+
+def loan_section(text, separators=()):
+    """Locate the financial run and its following label, preserving spelling.
+
+    'Secured Loan' can itself be a mortgage type. Prefer the label after the
+    four financial values; a repeated label without that evidence is ambiguous.
+    """
+    phone=re.search(r'\d{11}-\d{4}',text)
+    if not phone:return None,[]
+    labels=list(SECURED_LOAN.finditer(text,phone.end()))
+    supported=[]
+    for label in labels:
+        start,end=phone.end(),label.start()
+        window,boundaries=separated_text(text[start:end],{i-start for i in separators if start<i<end})
+        tokens=list(FINANCIAL_TOKEN.finditer(window))
+        consecutive=len(tokens)==4 and all(not window[a.end():b.start()].strip() for a,b in zip(tokens,tokens[1:]))
+        if consecutive:consecutive=not window[tokens[-1].end():].strip()
+        if consecutive:
+            supported.append((label,[(start+boundaries[m.start()],start+boundaries[m.end()]) for m in tokens]))
+    if len(supported)==1:return supported[0]
+    if not supported and len(labels)==1:
+        # If four numbers FOLLOW the only readable label, it can be the
+        # mortgage type with an unreadable later Existing Loan label. Do not
+        # relabel the loan amount and term as income and down payment.
+        following=re.match(r'\s*'+r'\s+'.join([FINANCIAL_NUMBER]*4)+r'(?=\s|$)',text[labels[0].end():])
+        if not following:return labels[0],[]
+    return None,[]
 
 def split_wide_gaps(lines,image,engine):
     refined=[]
@@ -56,8 +104,9 @@ def split_wide_gaps(lines,image,engine):
     return refined
 
 def locate(lines):
-    text=''; offsets=[]
+    text=''; offsets=[];separators=set()
     for line in lines:
+        separators.update(len(text)+i for i in line.get('separator_offsets',[]) if 0<i<len(line['text']))
         offsets.append((len(text),len(text)+len(line['text']),line))
         text+=line['text']+'\n'
     found={}; issues={}
@@ -67,13 +116,14 @@ def locate(lines):
     for field,match in ((1,ident),(3,lid),(15,phone)):
         if match: found[field]=match.span()
         else: issues[field]='Anchor not recognized'
-    secured=re.search(r'Secured\s*Loan',text,re.I)
+    secured,numeric_spans=loan_section(text,separators)
     if phone and secured and secured.start()>phone.end():
-        tokens=list(NUM.finditer(text,phone.end(),secured.start()))
-        if len(tokens)==4:
-            for field,match in zip((18,19,20,21),tokens): found[field]=match.span()
+        # Four candidates must form a continuous run immediately before the
+        # Secured Loan anchor. Never skip an unreadable token to shift columns.
+        if numeric_spans:
+            found.update(zip((18,19,20,21),numeric_spans))
         else:
-            for field in (18,19,20,21): issues[field]=f'Expected four separate numeric tokens between identifier and Secured Loan; found {len(tokens)}'
+            for field in (18,19,20,21): issues[field]='No continuous sequence of four separate numeric candidates before Secured Loan'
         tail=text[secured.end():]
         first=re.match(r'\s*[:：]?\s*(\d+(?:\.\d+)?)\s+(\d+(?:\.\d+)?)(?=\s|$)',tail)
         if first:
@@ -96,7 +146,8 @@ def locate(lines):
         # Approximate within-box position from OCR character offsets. Must be reviewed.
         left=x0+(x1-x0)*(a-lo)/max(hi-lo,1); right=x0+(x1-x0)*(b-lo)/max(hi-lo,1)
         boxes[field]=dict(box=[int(left)-2,int(y0)-2,int(right)+3,int(y1)+3],
-                          locator_text=text[a:b],approximate_boundary=(a!=lo or b!=hi))
+                          locator_text=text[a:b],character_span=[a,b],approximate_boundary=(a!=lo or b!=hi))
+    if 18 in boxes and secured:boxes[18]['following_label_span']=list(secured.span())
     return boxes,issues
 
 def number(value):

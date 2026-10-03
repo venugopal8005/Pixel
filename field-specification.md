@@ -1,5 +1,12 @@
 # Image-to-Excel field specification — draft
 
+## Runtime rules update — October 2, 2026
+
+The schema-v2 app now follows the supplied instruction manuals through `field_rules.json`.
+See [FIELD-RULES.md](FIELD-RULES.md) for field types, permitted formatting, source preservation,
+and known conflicts. The earlier notes below describe the labelled reference workbook and
+historical development findings; they do not override the current app rules for new images.
+
 ## Current authoritative decision
 
 The user selected the supplied Excel as the final authority for every field. Preserve its values exactly, including spelling, case, punctuation, blanks and formatting stored as text. This supersedes conflicting earlier corrections, which remain below as history. Do not ask the user to reconfirm disagreements with this labelled workbook. Raw OCR remains separate from accepted Excel output, and agreement must not be presented as independent image-transcription accuracy. This decision does not supply answers for future images without matching Excel records. The executable policy is `reference-policy.json`.

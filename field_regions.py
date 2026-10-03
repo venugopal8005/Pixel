@@ -1,14 +1,23 @@
 """Focused character-backed field candidates and persisted region selections."""
 from character_review import render_segments
 
+def review_record(state,record):
+    """Expose active crop OCR for editing without feeding it back to the mapper."""
+    added=[line for key,selection in state.get('field_regions',{}).items()
+           if key.startswith(record['key']+':') and selection.get('kind')=='rectangles'
+           for line in selection.get('lines',[])]
+    return dict(record,lines=[*record['lines'],*added])
+
 def entries(record):
     return [(line,seg) for line in record['lines'] for seg in line['segments']]
 
 def evidence(record,selected,decisions,candidate=False):
-    refs=[];sources=[];plain=[];marked=[]
+    refs=[];sources=[];plain=[];marked=[];parts=[]
     for line in record['lines']:
         picked=[s for l,s in selected if l['id']==line['id']]
         if not picked:continue
+        if parts:parts.append(dict(id=None,raw=' ',marked=' '))
+        parts.extend(dict(id=s['id'],raw=decisions.get(s['id'],s['text']),marked=render_segments([s],decisions)) for s in picked)
         refs.extend(dict(id=s['id'],line=line['id'],editable=True) for s in picked)
         plain.append(render_segments(picked,decisions,marked=False));marked.append(render_segments(picked,decisions))
         indexes=[line['segments'].index(s) for s in picked];first,last=min(indexes),max(indexes)
@@ -16,7 +25,7 @@ def evidence(record,selected,decisions,candidate=False):
         left=max(0,line['segments'][first].get('x',0)-4)
         right=line['segments'][last+1].get('x',width)+4 if last+1<len(line['segments']) else width
         sources.append(dict(line=line['id'],image=line.get('image'),page=line['page'],left=left,right=max(left+1,min(width,right))))
-    return dict(plain=' '.join(plain),marked=' '.join(marked),segments=refs,sources=sources,candidate=candidate)
+    return dict(plain=' '.join(plain),marked=' '.join(marked),segments=refs,sources=sources,candidate=candidate,parts=parts)
 
 def selected_region(record,selection,decisions):
     all_entries=entries(record);ids=[s['id'] for _,s in all_entries]

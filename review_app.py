@@ -15,7 +15,9 @@ from extract_dates_postal import locate as date_fields
 from extract_reference_codes import find_span
 from extract_fields import locate as numeric_fields
 from pilot_rules import HEADERS,decorate,adjacent_pages
-from field_regions import candidate_for,selected_region
+from field_constraints import field_coverage
+from field_regions import candidate_for,selected_region,review_record
+from field_crop import CropService,frames as crop_frames,archive_selection,ASSET
 import diagnostics
 
 ROOT=Path(__file__).resolve().parent
@@ -46,6 +48,9 @@ def save(state):
 
 def load(job):
     with LOCK:return json.loads((folder(job)/'state.json').read_text(encoding='utf-8'))
+
+def review_state(state):
+    return dict(state,records=[dict(review_record(state,r),crop_frames=crop_frames(state,r)) for r in state['records']])
 
 def list_jobs():
     with LOCK:
@@ -215,8 +220,10 @@ def locate_field_spans(text,lines):
         if span:spans[field]=span
     nums,_=numeric_fields(lines)
     for field,region in nums.items():
-        value=region['locator_text'];matches=list(re.finditer(re.escape(value),text))
-        if len(matches)==1:spans[field]=matches[0].span()
+        # The locator already knows which occurrence belongs to the field.
+        # Searching by its value loses repeated amounts or short numbers.
+        spans[field]=tuple(region['character_span'])
+    if 18 in nums:spans[22]=tuple(nums[18]['following_label_span'])
     # Product ends at the first amount, even when OCR puts both on one line.
     if 16 in spans and 18 in spans and spans[16][1]<spans[18][0]:
         spans[17]=(spans[16][1],spans[18][0])
@@ -225,14 +232,18 @@ def locate_field_spans(text,lines):
 def field_analysis(record,decisions):
     text='';original='';pieces=[];lines=[];original_lines=[];positions=[]
     for line in record['lines']:
-        line_text='';original_line=''
+        line_text='';original_line='';separators=[];original_separators=[]
         for seg in line['segments']:
             raw=decisions.get(seg['id'],seg['text']);a=len(text)+len(line_text);oa=len(original)+len(original_line)
-            pieces.append((a,a+len(raw),render_segments([seg],decisions),raw))
+            if seg['text']=='' and seg['category']=='ambiguous' and ' ' in seg.get('options',[]):
+                original_separators.append(len(original_line))
+                if seg['id'] not in decisions:separators.append(len(line_text))
+            pieces.append((a,a+len(raw),render_segments([seg],decisions),raw,seg['id']))
             positions.append(dict(start=a,end=a+len(raw),original_start=oa,original_end=oa+len(seg['text']),line=line,segment=seg))
             line_text+=raw;original_line+=seg['text']
-        lines.append(dict(text=line_text,box=line['box']));original_lines.append(dict(text=original_line,box=line['box']))
-        text+=line_text+'\n';original+=original_line+'\n';pieces.append((len(text)-1,len(text),' ','\n'))
+        lines.append(dict(text=line_text,box=line['box'],separator_offsets=separators))
+        original_lines.append(dict(text=original_line,box=line['box'],separator_offsets=original_separators))
+        text+=line_text+'\n';original+=original_line+'\n';pieces.append((len(text)-1,len(text),' ','\n',None))
     spans=locate_field_spans(text,lines)
     # An edit to an anchor or identifier must not make a previously located cell
     # disappear. Retain original boundaries, translating offsets after edits.
@@ -246,27 +257,37 @@ def field_analysis(record,decisions):
             shift=p['end']-p['original_end']
         return offset+shift
     for field,(a,b) in locate_field_spans(original,original_lines).items():spans[field]=(translated(a),translated(b))
-    values=[];issues=[]
+    values=[];issues=[];field_parts={}
     for field in range(1,37):
         if field in (2,13,25,36):values.append(None);continue
         span=spans.get(field)
         if not span:values.append('[?]');issues.append(field);continue
-        a,b=span;parts=[]
-        for lo,hi,marked,raw in pieces:
+        a,b=span;parts=[];field_parts[field]=[]
+        for lo,hi,marked,raw,segment_id in pieces:
+            # An optional space at the start of a field is a separator, not a
+            # character inside its value. Missing-digit alternatives stay in it.
+            if field in (18,19,20,21) and lo==hi==a and segment_id:
+                seg=next(p['segment'] for p in positions if p['segment']['id']==segment_id)
+                if seg.get('options') and all(not v.strip() for v in seg['options']):continue
             # Include insertion-only disagreements at their source position.
-            if hi==lo and a<=lo<b and marked:parts.append(marked);continue
+            if hi==lo and a<=lo<b and marked:
+                parts.append(marked);field_parts[field].append(dict(marked=marked,raw=raw,id=segment_id));continue
             if hi<=a or lo>=b:continue
-            if marked==raw:parts.append(raw[max(a-lo,0):min(b-lo,len(raw))])
-            elif lo>=a and hi<=b:parts.append(marked)
-            else:parts.append('[?]')
+            clipped=raw[max(a-lo,0):min(b-lo,len(raw))]
+            complete=lo>=a and hi<=b
+            shown=clipped if marked==raw else marked if complete else '[?]'
+            parts.append(shown)
+            field_parts[field].append(dict(marked=shown,raw=clipped,id=segment_id if complete else None))
         values.append(' '.join(''.join(parts).split()) or '[?]')
     evidence={}
     # Field zero is the displayed record ID; share the printed ID's evidence.
     if 1 in spans:spans[0]=spans[1]
     for field,(a,b) in spans.items():
         selected=[p for p in positions if (p['end']>a and p['start']<b) or (p['start']==p['end'] and a<=p['start']<b)]
+        selected=[p for p in selected if not (field in (18,19,20,21) and p['start']==p['end']==a and p['segment'].get('options') and
+            all(not v.strip() for v in p['segment']['options']))]
         evidence[field]=dict(plain=' '.join(text[a:b].split()),segments=[dict(id=p['segment']['id'],line=p['line']['id'],
-            editable=p['start']>=a and p['end']<=b) for p in selected],sources=[])
+            editable=p['start']>=a and p['end']<=b) for p in selected],sources=[],parts=field_parts.get(field,[]))
         for line in record['lines']:
             matches=[p for p in selected if p['line']['id']==line['id']]
             if not matches:continue
@@ -288,18 +309,19 @@ def sheet_data(state):
     result=[]
     for record in state['records']:
         row,issues,evidence=field_analysis(record,state['decisions']);cells=[]
+        editable_record=review_record(state,record)
         for field in range(1,36):
             if field in (2,13,25):continue
             selection=state.get('field_regions',{}).get(record['key']+':'+str(field))
             if selection:
-                evidence[field]=selected_region(record,selection,state['decisions'])
+                evidence[field]=selected_region(editable_record,selection,state['decisions'])
                 row[field]=evidence[field]['marked'] or '[?]'
                 if field in issues:issues.remove(field)
         mapped=dict(evidence)
         for field in range(1,36):
             if field not in (2,13,25) and not evidence.get(field,{}).get('sources'):
                 evidence[field]=candidate_for(record,field,mapped,state['decisions'])
-        segments={s['id']:s for line in record['lines'] for s in line['segments']}
+        segments={s['id']:s for line in editable_record['lines'] for s in line['segments']}
         for field,value in enumerate(row):
             key=record['key']+':'+str(field);manual=key in state.get('field_decisions',{})
             info=evidence.get(field,dict(plain='',segments=[],sources=[]))
@@ -308,8 +330,8 @@ def sheet_data(state):
             status='confirmed' if manual else ('unmapped' if field in issues else ('uncertain' if pending else 'read'))
             if value is None:status='blank'
             cells.append(dict(field=field,value=value,manual=manual,status=status,pending=pending,**info))
-        cells=decorate(state,record,cells)
-        result.append(dict(key=record['key'],record_id=record['record_id'],cells=cells,notes=record['notes'],fragments=record.get('fragments',[])))
+        cells=decorate(state,editable_record,cells)
+        result.append(dict(key=record['key'],record_id=record['record_id'],cells=cells,notes=record['notes'],fragments=record.get('fragments',[]),field_coverage=field_coverage(cells)))
     return result
 
 def export_data(state):
@@ -326,7 +348,7 @@ def export_data(state):
         rows.append(row)
         for field in issues:review.append([record['key'],str(field),'Missing field boundary','[?]','', 'Unresolved'])
         for note in record['notes']:review.append([record['key'],'','Layout review',note,'','Inspect source'])
-        for line in record['lines']:
+        for line in review_record(state,record)['lines']:
             raw.append([record['key'],line['page'],line['id'],render_segments(line['segments'],decisions)])
             for seg in line['segments']:
                 if seg['category']!='single' or seg['id'] in decisions:
@@ -335,6 +357,10 @@ def export_data(state):
         rows=[[c['value'] for c in r['cells']] for r in sheet_data(state)]
         for key,selection in state['field_regions'].items():
             review.append([key.rsplit(':',1)[0],key.rsplit(':',1)[1],'User-selected field boundary',selection['first'],selection['last'],'Boundary confirmed; text still needs review'])
+            if selection.get('kind')=='rectangles':
+                review.append([key.rsplit(':',1)[0],key.rsplit(':',1)[1],'User-drawn source areas',
+                    json.dumps([{k:r[k] for k in ('page','box','fragment')} for r in selection['regions']]),selection['id'],
+                    'Selection confirmed before OCR; model not retrained'])
     result=dict(rows=rows,review=review,lines=raw)
     if state.get('schema_version')==2:
         sheet=sheet_data(state)
@@ -343,9 +369,19 @@ def export_data(state):
             fragments=[[r['key'],f['page'],f['id'],f['status'],json.dumps(f['box']),' | '.join(r['notes'])] for r in state['records'] for f in r.get('fragments',[])])
         for r in sheet:
             for c in r['cells']:
+                for action in c.get('rule_actions',[]):
+                    review.append([r['key'],HEADERS[c['field']],'Field-rule alternative filter',
+                        ' / '.join(v or '∅' for v in action['original_options']),
+                        ' / '.join(v or '∅' for v in action['options']),
+                        'Rule-assisted; not human-confirmed' if action['resolved'] else 'Alternatives narrowed; unresolved'])
                 for issue in c.get('rule_issues',[]):review.append([r['key'],HEADERS[c['field']],'Field rule',str(c.get('raw_value') or ''),issue,'Confirmed value; rule warning retained' if c['manual'] else 'Needs review'])
+            coverage=r['field_coverage']
+            review.append([r['key'],'','Field mapping coverage',f"{coverage['located']}/{coverage['expected']} printed fields located",
+                ', '.join(HEADERS[f] for f in coverage['missing_fields']),coverage['note']])
         for issue in state.get('page_issues',[]):review.append(['','','Page review',issue,'','Needs review'])
     return result
+
+CROPS=CropService(load,save,folder,LOCK,write_examples)
 
 class Handler(BaseHTTPRequestHandler):
     def respond(self,value,status=200,mime='application/json',filename=None):
@@ -371,6 +407,7 @@ class Handler(BaseHTTPRequestHandler):
             if u.path=='/':return self.respond((ROOT/'review_sheet.html').read_bytes().replace(b'__TOKEN__',TOKEN.encode()),mime='text/html; charset=utf-8')
             if u.path=='/legacy':return self.respond((ROOT/'review_app.html').read_bytes().replace(b'__TOKEN__',TOKEN.encode()),mime='text/html; charset=utf-8')
             if u.path=='/review_sheet.js':return self.respond((ROOT/'review_sheet.js').read_bytes(),mime='text/javascript; charset=utf-8')
+            if u.path=='/field_crop_picker.js':return self.respond((ROOT/'field_crop_picker.js').read_bytes(),mime='text/javascript; charset=utf-8')
             if u.path=='/review_queue.js':return self.respond((ROOT/'review_queue.js').read_bytes(),mime='text/javascript; charset=utf-8')
             if u.path=='/review_diagnostics.js':return self.respond((ROOT/'review_diagnostics.js').read_bytes(),mime='text/javascript; charset=utf-8')
             if u.path=='/api/capabilities':
@@ -383,7 +420,8 @@ class Handler(BaseHTTPRequestHandler):
             if u.path=='/api/schema':return self.respond({'headers':HEADERS,'version':2})
             job=q.get('job',[''])[0]
             if u.path=='/api/progress':return self.respond(get_progress(job))
-            if u.path=='/api/state':return self.respond(load(job))
+            if u.path=='/api/state':return self.respond(review_state(load(job)))
+            if u.path=='/api/field-crop-status':return self.respond(CROPS.status(job,q.get('operation',[''])[0]))
             if u.path=='/api/sheet':return self.respond(sheet_data(load(job)))
             if u.path=='/api/learning':
                 with LOCK:return self.respond(write_examples(load(job),folder(job)))
@@ -391,7 +429,7 @@ class Handler(BaseHTTPRequestHandler):
                 state=load(job);return self.respond(export_data(state)['rows'])
             if u.path=='/image':
                 name=q.get('name',[''])[0]
-                if not re.fullmatch(r'(?:line-\d+|page-\d+)\.png',name):raise ValueError('Invalid image')
+                if not ASSET.fullmatch(name):raise ValueError('Invalid image')
                 return self.respond((folder(job)/name).read_bytes(),mime='image/png')
             if u.path=='/download':return self.respond((folder(job)/'converted.xlsx').read_bytes(),mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',filename='Pixel-converted.xlsx')
             self.respond({'error':'Not found'},404)
@@ -443,6 +481,7 @@ class Handler(BaseHTTPRequestHandler):
             if route=='/api/retry':
                 with LOCK:state=retry_scan(load(data['job']))
                 return self.respond({'id':state['id']})
+            if route=='/api/field-crop':return self.respond(CROPS.submit(data),202)
             with LOCK:
                 state=load(data['job'])
                 if state['status']!='ready':raise ValueError('Scan is not ready')
@@ -456,26 +495,30 @@ class Handler(BaseHTTPRequestHandler):
                     key=record['key']+':'+str(field)
                     if key in state.get('field_decisions',{}):raise ValueError('Reset the whole-field confirmation before adjusting its source region')
                     if data.get('reset'):
+                        archive_selection(state,key)
                         state.setdefault('field_regions',{}).pop(key,None)
-                        state['history'].append(dict(reset_field_region=key));save(state);return self.respond({'saved':True})
+                        state['history'].append(dict(reset_field_region=key));save(state)
+                        write_examples(state,folder(state['id']));return self.respond({'saved':True})
                     selection=dict(first=data['first'],last=data['last'])
                     selected_region(record,selection,state['decisions'])
+                    if state.get('field_regions',{}).get(key,{}).get('kind')=='rectangles':
+                        raise ValueError('Use Draw field area to change a rectangle selection.')
                     state.setdefault('field_regions',{})[key]=selection
                     state['history'].append(dict(field_region=key,selection=selection))
                     save(state);return self.respond({'saved':True})
                 if route=='/api/confirm':
-                    segments={s['id']:s for r in state['records'] for l in r['lines'] for s in l['segments']}
+                    segments={s['id']:s for r in state['records'] for l in review_record(state,r)['lines'] for s in l['segments']}
                     key=data['segment'];value=data['value']
                     if key not in segments or not isinstance(value,str) or len(value)>200:raise ValueError('Invalid correction')
                     for r in state['records']:
-                        for line in r['lines']:
+                        for line in review_record(state,r)['lines']:
                             if any(s['id']==key for s in line['segments']):state.get('verified_lines',{}).pop(line['id'],None)
                     state['history'].append(dict(segment=key,previous=state['decisions'].get(key),value=value))
                     if data.get('reset'):state['decisions'].pop(key,None)
                     else:state['decisions'][key]=value
                     save(state);summary=write_examples(state,folder(state['id']));return self.respond({'saved':True,'learning':summary})
                 if route=='/api/verify-line':
-                    lines={l['id']:l for r in state['records'] for l in r['lines']}
+                    lines={l['id']:l for r in state['records'] for l in review_record(state,r)['lines']}
                     if data['line'] not in lines:raise ValueError('Unknown text region')
                     line=lines[data['line']]
                     current_text=render_segments(line['segments'],state['decisions'],marked=False)
@@ -491,7 +534,9 @@ class Handler(BaseHTTPRequestHandler):
                     state['history'].append(dict(field=key,previous=state['field_decisions'].get(key),value=value))
                     if data.get('reset'):state['field_decisions'].pop(key,None)
                     else:state['field_decisions'][key]=value
-                    save(state);return self.respond({'saved':True})
+                    save(state)
+                    if state.get('field_regions',{}).get(key,{}).get('kind')=='rectangles':write_examples(state,folder(state['id']))
+                    return self.respond({'saved':True})
                 if route=='/api/export':
                     payload=folder(state['id'])/'export.json';payload.write_text(json.dumps(export_data(state),ensure_ascii=False),encoding='utf-8')
                     result=subprocess.run([str(NODE),str(ROOT/'app_export.mjs'),str(payload)],capture_output=True,text=True,timeout=90)

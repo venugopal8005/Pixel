@@ -1,0 +1,32 @@
+const assert=require('node:assert/strict');
+const {PixelCropPicker,rectangle}=require('./field_crop_picker.js');
+const elements=new Map();
+function element(){return {children:[],value:'2',classList:{toggle(){}},append(...xs){this.children.push(...xs);},replaceChildren(...xs){this.children=xs;},setAttribute(){},removeAttribute(){},getContext(){return {drawImage(){},fillRect(){},strokeRect(){},fillText(){}};},getBoundingClientRect(){return {left:0,top:0,width:560,height:160};},setPointerCapture(){},hasPointerCapture(){return true;},releasePointerCapture(){}};}
+global.document={getElementById:id=>{if(!elements.has(id))elements.set(id,element());return elements.get(id);},createElement:element};
+global.Image=class {set src(v){this.onload();}};
+global.sessionStorage={getItem(){return null;},setItem(){}};
+const el=id=>document.getElementById(id),frame={id:'f1',file:'page-0.png',page:'Test page',box:[0,0,280,80]};
+assert.deepEqual(rectangle({x:50,y:30},{x:10,y:5},frame),{fragment:'f1',box:[10,5,50,30]});
+assert.deepEqual(rectangle({x:-20,y:-10},{x:300,y:100},frame),{fragment:'f1',box:[0,0,280,80]});
+assert.equal(rectangle({x:1,y:1},{x:3,y:3},frame),null);
+let calls=[],completeRequest;
+const picker=new PixelCropPicker({api:(url,data)=>{calls.push({url,data});return new Promise(r=>completeRequest=r);},beforeSubmit:()=>true,onAvailability(){},onComplete(){},onReset(){},imageURL:(j,n)=>n});
+picker.configure({job:'a'.repeat(32),record:'r1',field:6,fieldName:'STREET ADDRESS',frames:[frame],printed:true,manual:false,unmapped:true});
+const canvas=picker.views[0].canvas,event=(x,y)=>({button:0,pointerId:1,clientX:x,clientY:y,preventDefault(){}});
+canvas.onpointerdown(event(20,20));canvas.onpointermove(event(160,60));canvas.onpointerup(event(160,60));
+assert.equal(calls.length,0,'Drawing must never submit or confirm OCR');
+assert.deepEqual(picker.drafts,[{fragment:'f1',box:[10,10,80,30]}]);
+assert.equal(el('rectConfirm').disabled,false);assert(el('rectConfirm').textContent.includes('STREET ADDRESS'));
+picker.addDraft({fragment:'f1',box:[20,15,50,25]});assert.equal(picker.drafts.length,1,'Reject overlapping drafts');
+picker.configure({...picker.context});assert.equal(picker.drafts.length,1,'Rendering a character must retain the crop draft');
+picker.poll=task=>{picker.polled=task;};
+(async()=>{
+ const pending=picker.submit();picker.submit();assert.equal(calls.length,1,'Double click must not submit twice');
+ assert.deepEqual(calls[0],{url:'/api/field-crop',data:{job:'a'.repeat(32),record:'r1',field:6,regions:[{fragment:'f1',box:[10,10,80,30]}],confirmed:true}});
+ assert.equal(el('rectConfirm').disabled,true);assert.equal(picker.hasDraft(),false,'Accepted OCR can continue when the dialog closes');
+ completeRequest({operation:'b'.repeat(32),job:picker.context.job,record:'r1',field:6,status:'running',stage:'queued'});await pending;assert(picker.polled);
+ picker.configure({...picker.context,field:7,fieldName:'CITY'});assert.equal(picker.drafts.length,0,'New cell cannot inherit selection coordinates');
+ assert(!picker.running(),'Another field remains editable while OCR works');
+ picker.configure({...picker.context,manual:true});canvas.onpointerdown(event(20,20));assert.equal(picker.drag,null,'Confirmed whole field is protected');
+ console.log('Crop UI checks passed: draw-only preview, scaled/reversed coordinates, overlap guard, target confirmation, duplicate prevention and independent navigation.');
+})().catch(e=>{console.error(e);process.exitCode=1;});

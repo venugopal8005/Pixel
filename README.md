@@ -1,6 +1,6 @@
 # Pixel OCR development baseline
 
-## Current repository snapshot — October 1, 2026
+## Current repository snapshot — October 3, 2026
 
 The current local pilot uses the spreadsheet review interface on port **8767**.
 Start with [APP-GUIDE.md](APP-GUIDE.md) for the workflow and
@@ -12,6 +12,10 @@ The older milestone notes below retain historical counts and endpoints.
 For testing the app and sending reproducible issue context, use
 [TESTING-GUIDE.md](TESTING-GUIDE.md) and the **Test report** / **Report this cell**
 buttons. Reports stay local and include project data only when explicitly selected.
+
+[FIELD-MAPPING.md](FIELD-MAPPING.md) explains why a complete record can still have
+unmapped fields, the financial-boundary fixes, and the validation needed before
+claiming complete extraction. Saved scans use the updated mapper after a server restart.
 
 The latest mapping demo uses `build_complete_record_map.py` and
 `complete_record_map.html`. It identifies 8 complete blocks on AQ160 and supplies
@@ -136,3 +140,13 @@ Subsequent review: nine user decisions are stored, including the Excel-based B88
 2. Implement field detection/mapping with explicit unresolved results and source regions.
 3. Compare the user's enhanced copies against the original with the same recognizer settings.
 4. Add another recognition model only when baseline errors identify a useful comparison.
+
+Field rules and their source-manual conflicts are documented in [FIELD-RULES.md](FIELD-RULES.md).
+
+### Recover a missing field
+
+Click its cell, draw the field on the record image, review the selected areas, and
+use the confirmation button to run local OCR. Drawing alone never saves or scans.
+Wrapped fields can use multiple ordered areas; character review and marked Excel
+export work with the new crops. Mapping examples are saved for later validation;
+this does not retrain the model. See [APP-GUIDE.md](APP-GUIDE.md#recover-an-unmapped-field).

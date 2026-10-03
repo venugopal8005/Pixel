@@ -5,6 +5,7 @@ import re
 from pathlib import Path
 from extract_dates_postal import locate as date_spans
 from extract_remaining_fields import locate_remaining
+from extract_fields import loan_section
 
 ROOT=Path(__file__).resolve().parent
 FIELDS=(4,5,6,7,10,11,12,14,16,17,22,26,27,28,31,32,33,34,35)
@@ -49,16 +50,26 @@ def locate(text):
     if phone:
         # Purpose word variants are locators only: return their original OCR spelling.
         tail=text[phone.end():]
+        secured,_=loan_section(text)
         purpose=re.match(r'\s*(?:Debt|Debit|dect)\s*c[a-z]{3,22}?tionn?',tail,re.I)
         if purpose:
             start=phone.end()+purpose.start();end=phone.end()+purpose.end()
             found[16]=(start,end)
-            amount=re.search(r'(?m)^\s*\d{5,}(?:\.\d+)?\s*$',text[end:])
+            # Never borrow an income/down-payment amount after Secured Loan as
+            # the end of Mortgage Type. Values may share an OCR line with text.
+            if secured:
+                stop=secured.start()
+                amount=re.search(r'(?<![\w.])\d{5,}(?:\.\d+)?(?=\s|$)',text[end:stop])
+            else:
+                # If the label is unreadable, a separate amount line can still
+                # bound the product. Reject it if numeric data was already
+                # swallowed into the proposed product (e.g. a merged amount).
+                amount=re.search(r'(?m)^\s*\d{5,}(?:\.\d+)?\s*$',text[end:])
+                if amount and re.search(r'\d|U\W*T\W*R|N\W*I\W*No',text[end:end+amount.start()],re.I):amount=None
             if amount:
                 product_end=end+amount.start()
                 if text[end:product_end].strip():found[17]=(end,product_end)
-        secured=re.search(r'Secured\s*Loan',tail,re.I)
-        if secured:found[22]=(phone.end()+secured.start(),phone.end()+secured.end())
+        if secured:found[22]=secured.span()
     final=re.search(r'(?i)(G[a-z]{1,8})\s*$',text)
     if final and final.group(1).lower() in ('good','goood','giood','gclod','goog','gd'):
         found[35]=final.span(1)

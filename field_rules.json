@@ -1,0 +1,599 @@
+{
+  "version": 1,
+  "policy": "Use detailed XLSX field types and formatting; DOCX and Fields Only supply the 37-column layout. No missing values, fixed ID positions, or unspecified lengths are invented.",
+  "fields": [
+    {
+      "index": 0,
+      "column": 1,
+      "name": "IMAGE NO",
+      "kind": "generated",
+      "format": "literal",
+      "min_length": null,
+      "max_length": null,
+      "source": {
+        "file": "INSTRUCTIONS.docx",
+        "section": "PERSONAL INFO"
+      },
+      "data_type": "Generated",
+      "instruction": "Generated from project metadata or actual review issues"
+    },
+    {
+      "index": 1,
+      "column": 2,
+      "name": "RECORD NO",
+      "kind": "digits",
+      "format": "digits",
+      "min_length": null,
+      "max_length": null,
+      "source": {
+        "file": "INSTRUCTIONS.docx",
+        "section": "PERSONAL INFO"
+      },
+      "data_type": "Printed record identifier",
+      "instruction": "Preserve printed record ID"
+    },
+    {
+      "index": 2,
+      "column": 3,
+      "name": "TODAY’S DATE",
+      "kind": "generated",
+      "format": "literal",
+      "min_length": null,
+      "max_length": null,
+      "source": {
+        "file": "INSTRUCTIONS.docx",
+        "section": "PERSONAL INFO"
+      },
+      "data_type": "Generated",
+      "instruction": "Generated from project metadata or actual review issues"
+    },
+    {
+      "index": 3,
+      "column": 4,
+      "name": "LEAD ID",
+      "kind": "mixed",
+      "format": "literal",
+      "min_length": null,
+      "max_length": null,
+      "source": {
+        "file": "INSTRUCTIONS.xlsx",
+        "sheet": "Mortgage Instructions",
+        "row": 2
+      },
+      "data_type": "String + Numeric + Special Character",
+      "instruction": "JUST ENTER AS SHOWN IN THE IMAGE"
+    },
+    {
+      "index": 4,
+      "column": 5,
+      "name": "APPLICANT FIRST NAME",
+      "kind": "text",
+      "format": "first_name",
+      "min_length": null,
+      "max_length": null,
+      "source": {
+        "file": "INSTRUCTIONS.xlsx",
+        "sheet": "Mortgage Instructions",
+        "row": 3
+      },
+      "data_type": "String",
+      "instruction": "First letter uppercase, remaining letters lowercase."
+    },
+    {
+      "index": 5,
+      "column": 6,
+      "name": "APPLICANT LAST NAME",
+      "kind": "mixed",
+      "format": "last_name",
+      "min_length": null,
+      "max_length": null,
+      "source": {
+        "file": "INSTRUCTIONS.xlsx",
+        "sheet": "Mortgage Instructions",
+        "row": 4
+      },
+      "data_type": "String",
+      "instruction": "First letter uppercase and the remaining letters lowercase. After a special character or number, the first letter should be uppercase and the remaining letters lowercase."
+    },
+    {
+      "index": 6,
+      "column": 7,
+      "name": "STREET ADDRESS",
+      "kind": "mixed",
+      "format": "literal",
+      "min_length": null,
+      "max_length": null,
+      "source": {
+        "file": "INSTRUCTIONS.xlsx",
+        "sheet": "Mortgage Instructions",
+        "row": 5
+      },
+      "data_type": "String + Numeric + Special Character",
+      "instruction": "JUST ENTER AS SHOWN IN THE IMAGE"
+    },
+    {
+      "index": 7,
+      "column": 8,
+      "name": "CITY",
+      "kind": "text",
+      "format": "literal",
+      "min_length": null,
+      "max_length": null,
+      "source": {
+        "file": "INSTRUCTIONS.xlsx",
+        "sheet": "Mortgage Instructions",
+        "row": 6
+      },
+      "data_type": "String",
+      "instruction": "JUST ENTER AS SHOWN IN THE IMAGE"
+    },
+    {
+      "index": 8,
+      "column": 9,
+      "name": "ZIP CODE",
+      "kind": "digits",
+      "format": "digits",
+      "min_length": null,
+      "max_length": null,
+      "source": {
+        "file": "INSTRUCTIONS.xlsx",
+        "sheet": "Mortgage Instructions",
+        "row": 7
+      },
+      "data_type": "Numeric",
+      "instruction": "JUST ENTER AS SHOWN IN THE IMAGE"
+    },
+    {
+      "index": 9,
+      "column": 10,
+      "name": "APPLICANT D.O.B",
+      "kind": "date",
+      "format": "date",
+      "min_length": null,
+      "max_length": null,
+      "source": {
+        "file": "INSTRUCTIONS.xlsx",
+        "sheet": "Mortgage Instructions",
+        "row": 8
+      },
+      "data_type": "String + Numeric + Special Character",
+      "instruction": "Must be entered in MM/DD/YYYY Format"
+    },
+    {
+      "index": 10,
+      "column": 11,
+      "name": "CO-APPLICANT FIRST NAME",
+      "kind": "text",
+      "format": "first_name",
+      "min_length": null,
+      "max_length": null,
+      "source": {
+        "file": "INSTRUCTIONS.xlsx",
+        "sheet": "Mortgage Instructions",
+        "row": 9
+      },
+      "data_type": "String",
+      "instruction": "First letter uppercase, remaining letters lowercase."
+    },
+    {
+      "index": 11,
+      "column": 12,
+      "name": "CO-APPLICANT LAST NAME",
+      "kind": "mixed",
+      "format": "last_name",
+      "min_length": null,
+      "max_length": null,
+      "source": {
+        "file": "INSTRUCTIONS.xlsx",
+        "sheet": "Mortgage Instructions",
+        "row": 10
+      },
+      "data_type": "String + Special Charater",
+      "instruction": "First letter uppercase and the remaining letters lowercase. After a special character or number, the first letter should be uppercase and the remaining letters lowercase."
+    },
+    {
+      "index": 12,
+      "column": 13,
+      "name": "BEST TIME TO CALL",
+      "kind": "text",
+      "format": "literal",
+      "min_length": null,
+      "max_length": null,
+      "source": {
+        "file": "INSTRUCTIONS.xlsx",
+        "sheet": "Mortgage Instructions",
+        "row": 11
+      },
+      "data_type": "String",
+      "instruction": "JUST ENTER AS SHOWN IN THE IMAGE"
+    },
+    {
+      "index": 13,
+      "column": 14,
+      "name": "REMARK 1",
+      "kind": "generated",
+      "format": "literal",
+      "min_length": null,
+      "max_length": null,
+      "source": {
+        "file": "INSTRUCTIONS.xlsx",
+        "sheet": "Mortgage Instructions",
+        "row": 12
+      },
+      "data_type": "Generated",
+      "instruction": "Describe actual unresolved fields and rule warnings; otherwise Not Applicable.",
+      "source_example_instruction": "DOB,ALN ARE INVALID AND CALN IS MISSING."
+    },
+    {
+      "index": 14,
+      "column": 15,
+      "name": "TYPE OF PROPERTY",
+      "kind": "text",
+      "format": "literal",
+      "min_length": null,
+      "max_length": null,
+      "source": {
+        "file": "INSTRUCTIONS.xlsx",
+        "sheet": "Mortgage Instructions",
+        "row": 14
+      },
+      "data_type": "String + Special Charater",
+      "instruction": "JUST ENTER AS SHOWN IN THE IMAGE"
+    },
+    {
+      "index": 15,
+      "column": 16,
+      "name": "PROPERTY VALUE",
+      "kind": "numeric_identifier",
+      "format": "numeric_identifier",
+      "min_length": null,
+      "max_length": null,
+      "source": {
+        "file": "INSTRUCTIONS.xlsx",
+        "sheet": "Mortgage Instructions",
+        "row": 15
+      },
+      "data_type": "Numeric + Special Character",
+      "instruction": "Must be entered in the format: 10018-25789",
+      "pattern": "[0-9]{5}-[0-9]{5}"
+    },
+    {
+      "index": 16,
+      "column": 17,
+      "name": "PURPOSE OF LOAN",
+      "kind": "text",
+      "format": "literal",
+      "min_length": null,
+      "max_length": null,
+      "source": {
+        "file": "INSTRUCTIONS.xlsx",
+        "sheet": "Mortgage Instructions",
+        "row": 17
+      },
+      "data_type": "String",
+      "instruction": "JUST ENTER AS SHOWN IN THE IMAGE"
+    },
+    {
+      "index": 17,
+      "column": 18,
+      "name": "MORTGAGE TYPE",
+      "kind": "text",
+      "format": "literal",
+      "min_length": null,
+      "max_length": null,
+      "source": {
+        "file": "INSTRUCTIONS.xlsx",
+        "sheet": "Mortgage Instructions",
+        "row": 18
+      },
+      "data_type": "String",
+      "instruction": "JUST ENTER AS SHOWN IN THE IMAGE"
+    },
+    {
+      "index": 18,
+      "column": 19,
+      "name": "LOAN AMOUNT",
+      "kind": "currency",
+      "format": "currency",
+      "min_length": null,
+      "max_length": null,
+      "source": {
+        "file": "INSTRUCTIONS.xlsx",
+        "sheet": "Mortgage Instructions",
+        "row": 19
+      },
+      "data_type": "Numeric + Special Character",
+      "instruction": "Use commas after every 3 digits and 2 digits after the decimal point."
+    },
+    {
+      "index": 19,
+      "column": 20,
+      "name": "LOAN TERM",
+      "kind": "months",
+      "format": "months",
+      "min_length": null,
+      "max_length": null,
+      "source": {
+        "file": "INSTRUCTIONS.xlsx",
+        "sheet": "Mortgage Instructions",
+        "row": 20
+      },
+      "data_type": "Numeric + Special Character",
+      "instruction": "Must be entered with Months"
+    },
+    {
+      "index": 20,
+      "column": 21,
+      "name": "INTEREST TYPE",
+      "kind": "percent",
+      "format": "percent",
+      "min_length": null,
+      "max_length": null,
+      "source": {
+        "file": "INSTRUCTIONS.xlsx",
+        "sheet": "Mortgage Instructions",
+        "row": 21
+      },
+      "data_type": "Numeric + Special Character",
+      "instruction": "Must be entered with %"
+    },
+    {
+      "index": 21,
+      "column": 22,
+      "name": "MONTHLY INSTALLMENT",
+      "kind": "currency",
+      "format": "currency",
+      "min_length": null,
+      "max_length": null,
+      "source": {
+        "file": "INSTRUCTIONS.xlsx",
+        "sheet": "Mortgage Instructions",
+        "row": 22
+      },
+      "data_type": "Numeric + Special Character",
+      "instruction": "Use commas after every 3 digits and 2 digits after the decimal point."
+    },
+    {
+      "index": 22,
+      "column": 23,
+      "name": "EXISTING LOAN",
+      "kind": "text",
+      "format": "literal",
+      "min_length": null,
+      "max_length": null,
+      "source": {
+        "file": "INSTRUCTIONS.xlsx",
+        "sheet": "Mortgage Instructions",
+        "row": 23
+      },
+      "data_type": "String",
+      "instruction": "JUST ENTER AS SHOWN IN THE IMAGE"
+    },
+    {
+      "index": 23,
+      "column": 24,
+      "name": "ANNUAL INCOME",
+      "kind": "currency",
+      "format": "currency",
+      "min_length": null,
+      "max_length": null,
+      "source": {
+        "file": "INSTRUCTIONS.xlsx",
+        "sheet": "Mortgage Instructions",
+        "row": 24
+      },
+      "data_type": "Numeric + Special Character",
+      "instruction": "Use commas after every 3 digits and 2 digits after the decimal point."
+    },
+    {
+      "index": 24,
+      "column": 25,
+      "name": "DOWN PAYMENT",
+      "kind": "currency",
+      "format": "currency",
+      "min_length": null,
+      "max_length": null,
+      "source": {
+        "file": "INSTRUCTIONS.xlsx",
+        "sheet": "Mortgage Instructions",
+        "row": 25
+      },
+      "data_type": "Numeric + Special Character",
+      "instruction": "Use commas after every 3 digits and 2 digits after the decimal point."
+    },
+    {
+      "index": 25,
+      "column": 26,
+      "name": "REMARKS2",
+      "kind": "generated",
+      "format": "literal",
+      "min_length": null,
+      "max_length": null,
+      "source": {
+        "file": "INSTRUCTIONS.xlsx",
+        "sheet": "Mortgage Instructions",
+        "row": 26
+      },
+      "data_type": "Generated",
+      "instruction": "Describe actual unresolved fields and rule warnings; otherwise Not Applicable.",
+      "source_example_instruction": "PV IS INVALID."
+    },
+    {
+      "index": 26,
+      "column": 27,
+      "name": "LENDER NAME",
+      "kind": "text",
+      "format": "literal",
+      "min_length": null,
+      "max_length": null,
+      "source": {
+        "file": "INSTRUCTIONS.xlsx",
+        "sheet": "Mortgage Instructions",
+        "row": 28
+      },
+      "data_type": "String",
+      "instruction": "JUST ENTER AS SHOWN IN THE IMAGE"
+    },
+    {
+      "index": 27,
+      "column": 28,
+      "name": "LOAN OFFICER FIRST NAME",
+      "kind": "text",
+      "format": "first_name",
+      "min_length": null,
+      "max_length": null,
+      "source": {
+        "file": "INSTRUCTIONS.xlsx",
+        "sheet": "Mortgage Instructions",
+        "row": 29
+      },
+      "data_type": "String",
+      "instruction": "First letter uppercase, remaining letters lowercase."
+    },
+    {
+      "index": 28,
+      "column": 29,
+      "name": "LOAN OFFICER LAST NAME",
+      "kind": "mixed",
+      "format": "last_name",
+      "min_length": null,
+      "max_length": null,
+      "source": {
+        "file": "INSTRUCTIONS.xlsx",
+        "sheet": "Mortgage Instructions",
+        "row": 30
+      },
+      "data_type": "String",
+      "instruction": "First letter uppercase and the remaining letters lowercase. After a special character or number, the first letter should be uppercase and the remaining letters lowercase."
+    },
+    {
+      "index": 29,
+      "column": 30,
+      "name": "T.R. #",
+      "kind": "mixed",
+      "format": "literal",
+      "min_length": null,
+      "max_length": null,
+      "source": {
+        "file": "INSTRUCTIONS.xlsx",
+        "sheet": "Mortgage Instructions",
+        "row": 31
+      },
+      "data_type": "String + Numeric + Special Character",
+      "instruction": "JUST ENTER AS SHOWN IN THE IMAGE"
+    },
+    {
+      "index": 30,
+      "column": 31,
+      "name": "N.I. #",
+      "kind": "mixed",
+      "format": "literal",
+      "min_length": null,
+      "max_length": null,
+      "source": {
+        "file": "INSTRUCTIONS.xlsx",
+        "sheet": "Mortgage Instructions",
+        "row": 32
+      },
+      "data_type": "String + Numeric + Special Character",
+      "instruction": "JUST ENTER AS SHOWN IN THE IMAGE"
+    },
+    {
+      "index": 31,
+      "column": 32,
+      "name": "OCCUPATION",
+      "kind": "text",
+      "format": "literal",
+      "min_length": null,
+      "max_length": null,
+      "source": {
+        "file": "INSTRUCTIONS.xlsx",
+        "sheet": "Mortgage Instructions",
+        "row": 33
+      },
+      "data_type": "String + Special Charater",
+      "instruction": "JUST ENTER AS SHOWN IN THE IMAGE"
+    },
+    {
+      "index": 32,
+      "column": 33,
+      "name": "OTHER INCOME",
+      "kind": "text",
+      "format": "literal",
+      "min_length": null,
+      "max_length": null,
+      "source": {
+        "file": "INSTRUCTIONS.xlsx",
+        "sheet": "Mortgage Instructions",
+        "row": 34
+      },
+      "data_type": "String",
+      "instruction": "JUST ENTER AS SHOWN IN THE IMAGE"
+    },
+    {
+      "index": 33,
+      "column": 34,
+      "name": "CREDIT CARD ISSUER",
+      "kind": "text",
+      "format": "literal",
+      "min_length": null,
+      "max_length": null,
+      "source": {
+        "file": "INSTRUCTIONS.xlsx",
+        "sheet": "Mortgage Instructions",
+        "row": 35
+      },
+      "data_type": "String",
+      "instruction": "JUST ENTER AS SHOWN IN THE IMAGE"
+    },
+    {
+      "index": 34,
+      "column": 35,
+      "name": "CREDIT CARD TYPE",
+      "kind": "text",
+      "format": "credit_card",
+      "min_length": null,
+      "max_length": null,
+      "source": {
+        "file": "INSTRUCTIONS.xlsx",
+        "sheet": "Mortgage Instructions",
+        "row": 36
+      },
+      "data_type": "String",
+      "instruction": "Must be entered with Credit Card"
+    },
+    {
+      "index": 35,
+      "column": 36,
+      "name": "CREDIT SCORE",
+      "kind": "text",
+      "format": "literal",
+      "min_length": null,
+      "max_length": null,
+      "source": {
+        "file": "INSTRUCTIONS.xlsx",
+        "sheet": "Mortgage Instructions",
+        "row": 37
+      },
+      "data_type": "String",
+      "instruction": "JUST ENTER AS SHOWN IN THE IMAGE"
+    },
+    {
+      "index": 36,
+      "column": 37,
+      "name": "REMARKS3",
+      "kind": "generated",
+      "format": "literal",
+      "min_length": null,
+      "max_length": null,
+      "source": {
+        "file": "INSTRUCTIONS.xlsx",
+        "sheet": "Mortgage Instructions",
+        "row": 38
+      },
+      "data_type": "Generated",
+      "instruction": "Describe actual unresolved fields and rule warnings; otherwise Not Applicable.",
+      "source_example_instruction": "N.A."
+    }
+  ]
+}

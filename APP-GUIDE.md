@@ -1,5 +1,15 @@
 # Pixel spreadsheet review
 
+## Field rules — October 2, 2026
+
+Field types now filter OCR alternatives in located cells and in the character editor.
+For example, `[O/0]` becomes `0` in a numeric field; `[1/7]` stays uncertain.
+Rule-assisted readings remain unverified and editable. Unknown characters and unlocated
+fields remain `[?]`; source OCR and human corrections are preserved.
+The sheet and cell editor show printed-field location counts separately from record detection.
+Read [FIELD-RULES.md](FIELD-RULES.md) for all 37 columns and manual conflicts.
+Restart Pixel and reload the page to apply the rules to saved projects; no OCR rescan is needed.
+
 ## Test reports — October 1, 2026
 
 Whole-field confirmation stays green even when a field rule disagrees. Such cells
@@ -103,15 +113,27 @@ Open http://127.0.0.1:8767 while the local service is running. To start it later
 2. Click **Scan images**. Processing is local and may take several minutes for dense pages. A progress count updates as blocks finish.
 3. The sheet displays ID plus fields 1–36. Click any cell to open its review overlay. Amber cells contain uncertain characters; red cells have no reliable field mapping. White cells remain editable and are not guaranteed correct.
 4. Inspect the field crop, select a character and choose an alternative or type a replacement. **Save character** saves immediately and selects the next unsure character in that field. Unflagged characters are also clickable. An empty replacement removes an extra OCR character. Segments crossing field boundaries require whole-field editing.
-5. Use **Previous cell** and **Next cell** to move through the sheet. Enable **Navigate unsure cells only** to skip other cells. Missing mappings show a labelled, focused candidate crop with character controls; accept or adjust its boundary before using it as the field. Full pages remain optional.
+5. Use **Previous cell** and **Next cell** to move through the sheet. Enable **Navigate unsure cells only** to skip other cells. Missing mappings open **Draw field area** on the corresponding record image. Follow the rectangle-selection steps below. Full pages remain optional.
 6. Use the whole-field box to fix a misplaced or missing field, then **Confirm field**. This accepts every character in that box and overrides character-level output for this cell. **Reset field confirmation** removes that override while keeping saved character corrections. Unsaved whole-field edits prompt before navigation discards them.
 7. Close the overlay and click **Export Excel** at any time. Download starts automatically, with a fallback **Download Excel** link. Saved corrections appear alongside uncertainty markers for unreviewed readings. Choose your saved scan to resume later.
+
+## Recover an unmapped field
+
+1. Click the cell. **Draw field area** opens automatically when its location is missing; open it manually to replace a wrong crop in a mapped cell.
+2. Drag a rectangle around the field. Use the image-size control to zoom. For wrapped text or joined record fragments, draw separate areas in reading order (up to 8). Remove/reorder areas in **Selection preview**.
+3. Check the preview and the field name, then click **Confirm selection for [field] & read text**. Releasing the mouse only creates a draft; it never runs OCR or saves the mapping.
+4. Local OCR reads the confirmed areas and shows progress. You can move to another cell while it runs. On completion, the selected field receives focused crops and the usual character alternatives. Selection confirmation does **not** confirm the recognized text.
+5. Correct characters or confirm the whole field, then export as usual. Unresolved alternatives and `[?]` remain in the workbook. **Edit saved selection** copies its areas back to a draft; **Reset saved selection** restores the automatic mapping and archives the replaced selection.
+
+A whole-field confirmation must be reset before changing its image boundary. Duplicate submissions are blocked. If a record changes during OCR, the stale result is rejected and the saved human edits are retained. OCR failure preserves the previous mapping. Browser reload resumes progress tracking while the server is running; after a server restart, an unfinished crop scan must be selected again. Older scans without source coordinates require rescanning their pages.
+
+Confirmed rectangles, field/record IDs, source coordinates and image hashes are saved locally. Boundary examples and text labels stay separate: unreviewed OCR is not a training label. Only fully confirmed line text becomes a candidate for dataset validation. No model retraining happens yet.
 
 ## Uncertain-first review and learning data
 
 The sheet's **Review next unsure cell** button opens the first cell needing review. Within a mapped cell the editor selects an unconfirmed flagged character first. Finishing a cell's flags does not independently verify its field boundary or its remaining OCR text. The earlier line-based interface remains at `/legacy` for accessing source text not mapped to a column.
 
-Every character confirmation updates a local `learning.json` beside its saved scan. Each example retains the image hash, source page/region, original OCR and user decisions. Partial corrections remain partial examples, without a whole-line training label. The legacy line-review interface also supports explicit whole-line confirmation. Field corrections remain saved in `state.json` and excluded from recognizer training because their image boundaries are not validated. A training opt-in at export is deferred with the fine-tuning work; the current Export button only creates a workbook.
+Every character confirmation updates a local `learning.json` beside its saved scan. Each example retains the image hash, source page/region, original OCR and user decisions. Partial corrections remain partial examples, without a whole-line training label. The legacy line-review interface also supports explicit whole-line confirmation. Whole-field corrections remain saved in `state.json`. For manually drawn fields, they also accompany the boundary example, but they are not recognizer training labels because formatting and character alignment still require validation. A training opt-in at export is deferred with the fine-tuning work; the current Export button only creates a workbook.
 
 This is training-data collection, not continuous model retraining. The OCR model weights are unchanged. Before a model update, examples still need dataset validation/deduplication and a separate test set; a worse candidate must not replace the current model. More corrections can improve performance but do not guarantee 100% accuracy.
 
@@ -125,7 +147,11 @@ All exported readings are text, preserving IDs, leading zeros and uncertainty ma
 
 ## What has been checked
 
-The current pilot passes 62 Python tests, JavaScript syntax and review-queue checks.
+The latest mapper, rules and crop recovery pass 113 Python tests, including financial-boundary,
+character-rule, saved-decision and HTTP/Excel export regressions. See
+[FIELD-MAPPING.md](FIELD-MAPPING.md) for mapping limits and the next validation steps.
+
+Earlier pilot checks included JavaScript syntax and review-queue checks.
 Browser checks verified named project creation, ordered upload, scanning, focused
 cross-page field crops, saved boundaries/characters after reload, and a downloaded
 Excel workbook containing those selections and unresolved markers. Layout geometry

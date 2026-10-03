@@ -1,11 +1,12 @@
 """Collect image-linked corrections, without treating unreviewed OCR as training truth."""
 import hashlib,json
 from character_review import render_segments
+from field_regions import review_record
 
 def build_examples(state,directory):
     examples=[];decisions=state['decisions']
     for record in state['records']:
-        for line in record['lines']:
+        for line in review_record(state,record)['lines']:
             corrected=[dict(id=s['id'],original=s['text'],confirmed=decisions[s['id']],approximate_x=s.get('x'))
                        for s in line['segments'] if s['id'] in decisions]
             text=render_segments(line['segments'],decisions,marked=False)
@@ -21,9 +22,17 @@ def build_examples(state,directory):
                 status='ready_for_dataset_validation' if complete or verified_current else 'partial_corrections_only',
                 confirmed_segments=corrected,
                 note='Line crop is exact; individual character positions are approximate. No automatic model update.'))
-    return dict(schema_version=1,job=state['id'],model_updated=False,
+    mappings=[]
+    for key,selection in state.get('field_regions',{}).items():
+        if selection.get('kind')!='rectangles':continue
+        record_key,field=key.rsplit(':',1)
+        mappings.append(dict(id=selection['id'],record=record_key,field=int(field),regions=selection['regions'],
+            source_lines=[l['id'] for l in selection['lines']],confirmed_at=selection['confirmed_at'],
+            status='boundary_confirmed_pending_dataset_validation',confirmed_field_value=state.get('field_decisions',{}).get(key),
+            note='Field values may include export formatting. Do not use them as crop transcriptions without alignment and review.'))
+    return dict(schema_version=2,job=state['id'],model_updated=False,field_mappings=mappings,
         examples=examples,summary=dict(saved_lines=len(examples),validated_line_candidates=sum(e['training_text'] is not None for e in examples),
-        confirmed_segments=sum(len(e['confirmed_segments']) for e in examples)))
+        confirmed_segments=sum(len(e['confirmed_segments']) for e in examples),saved_field_mappings=len(mappings)))
 
 def write_examples(state,directory):
     result=build_examples(state,directory)

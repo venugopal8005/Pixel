@@ -40,6 +40,18 @@ Use a new disposable project named `TEST-01`, not an existing corrected project.
 
 After the basic workflow, use a separate disposable project for negative cases: duplicate images, a missing page (AQ159 + AQ161), invalid input, and an interrupted scan. Report each case separately. Do not treat absence of a visible error as proof of complete record or field recognition.
 
+## Rectangle recovery check
+
+On a disposable copy, open an unmapped printed field and draw its area. Verify
+that drawing alone leaves the saved cell unchanged. Check **Selection preview**,
+then use the confirmation button naming that field. Navigate to another cell
+while OCR runs, return, and verify the focused crop and character controls.
+Save a character, reload, export, and compare the UI with the workbook.
+Repeat for a wrapped field with two rectangles, a continued record with one
+rectangle in each fragment, a removed draft, and a reset saved selection.
+Include the project in the test report when diagnosing a saved crop; a screenshot
+is needed for an unsaved drawing because draft rectangles are not in project state.
+
 ## Short message to send with the report
 
 Test number and feature:

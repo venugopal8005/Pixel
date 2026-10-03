@@ -38,7 +38,7 @@ def clean(value, token='', depth=0):
 
 def build_info(root):
     files = {}
-    for pattern in ('*.py', '*.js', '*.html', '*.mjs', 'requirements*.txt'):
+    for pattern in ('*.py', '*.js', '*.html', '*.mjs', 'field_rules.json', 'requirements*.txt'):
         for path in sorted(root.glob(pattern)):
             files[path.name] = hashlib.sha256(path.read_bytes()).hexdigest()
     digest = hashlib.sha256(json.dumps(files, sort_keys=True).encode()).hexdigest()
@@ -129,9 +129,13 @@ def report_bundle(root, data_root, request, state, progress, build, node_path, t
             directory=(data_root/job).resolve();names={p.get('file', '') for p in state.get('pages', [])}
             for record in state.get('records', []):
                 names.update(line.get('image', '') for line in record.get('lines', []))
+            for selection in state.get('field_regions',{}).values():
+                if selection.get('kind')=='rectangles':
+                    names.update(l['image'] for l in selection.get('lines',[]))
+                    names.update(r['crop_image'] for r in selection.get('regions',[]))
             names.add('converted.xlsx');size=0
             for name in sorted(names):
-                if not re.fullmatch(r'(?:page-\d+\.png|line-\d+\.png|converted\.xlsx)',name):
+                if not re.fullmatch(r'(?:(?:page-\d+|line-\d+|crop-[a-f0-9]{32}-\d+|selection-[a-f0-9]{32}-\d+)\.png|converted\.xlsx)',name):
                     if name:omitted.append(dict(file=name, reason='Not a supported project asset'))
                     continue
                 path=directory/name
