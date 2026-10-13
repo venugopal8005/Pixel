@@ -82,7 +82,8 @@ function paintScan(snapshot){
  $('scanPages').textContent=(stats.page||'—')+' / '+(stats.page_count||state?.pages?.length||'—');
  $('scanRecords').textContent=stats.record_candidates??state?.records?.length??0;$('scanRegions').textContent=stats.text_regions??state?.records?.reduce((n,r)=>n+r.lines.length,0)??0;
  $('scanDiagnostic').textContent=snapshot.error||'';$('progress').textContent='';updateScanClock();
- if(state?.id===snapshot.id){paintImageStatuses();paintReviewState();}
+ // Upload progress has no review workspace (and often no project ID yet).
+ if(stage!=='uploading'&&state?.id&&state.id===snapshot.id){paintImageStatuses();paintReviewState();}
 }
 function updateScanClock(){if(!scanDisplay)return;const st=scanDisplay.scan_stats||{},queued=scanDisplay.status==='scanning'&&st.stage==='queued';const elapsed=queued&&st.queued_at?Date.now()/1000-st.queued_at:scanDisplay.status==='scanning'&&st.started_at?Date.now()/1000-st.started_at:st.elapsed_seconds;
  $('scanElapsed').textContent=Number.isFinite(elapsed)?(queued?'Waiting ':'Elapsed ')+Math.floor(Math.max(0,elapsed)/60)+'m '+String(Math.floor(Math.max(0,elapsed)%60)).padStart(2,'0')+'s':'';}
