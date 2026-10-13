@@ -18,6 +18,7 @@
 #viewContext{margin:5px 0 0;max-width:760px}.imageNavigation{margin:16px 0;padding:10px 12px;border:1px solid var(--line);border-radius:9px;background:white;gap:10px}.imageNavigation button,.imageNavigation a{font-size:12px}#imagePosition{font-size:12px;color:#52657b;margin-right:auto}
 #recordPager{margin:12px 0;font-size:12px}#recordPager button{font-size:12px}#sources{max-width:none}.emptySheet{padding:35px 20px;text-align:left;color:#62748a;background:white}
 #sheetWrap{scroll-padding-left:160px;scroll-padding-top:65px}.sourceTag{color:#4961a1!important;font-weight:600}
+.sheetStatus{min-height:220px;padding:30px;background:linear-gradient(120deg,#fff,#f0f5ff)}.sheetStatus h3{font-size:22px;margin:18px 0 8px}.sheetStatus p{max-width:680px;margin:0 0 20px;color:#52657b}.sheetStatus .pill{color:#244d94;background:#e5eeff}
 .srOnly{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
 @media(max-width:850px){.reviewWorkspace{grid-template-columns:minmax(0,1fr)}.imageSidebar{position:static}.imageSidebar input{max-width:340px}.allImages{width:auto;margin-right:10px}#imageList{display:flex;max-height:145px;overflow-x:auto;overflow-y:hidden;padding:4px}.imageCard{flex:0 0 205px}.imageNavNote{margin-top:8px}.imageNavigation{align-items:center}}
 </style>
@@ -60,15 +61,18 @@
 <p class="muted imageNavNote">Continued records appear under each source image. Corrections are shared.</p>
 </aside>
 <div class="sheetPanel">
-<div class="row between"><div><h2 id="viewTitle">All images</h2><p id="viewContext" class="muted"></p></div><div class="row"><button id="reviewNext">Review next unsure cell</button><button id="export" class="primary" title="Export every record in the project to Excel">Export all</button></div></div>
+<div class="row between"><div><h2 id="viewTitle">All images</h2><p id="viewContext" class="muted"></p></div><div class="row"><button id="reviewNext" class="hidden">Review next unsure cell</button><button id="export" class="primary" title="Export every record in the project to Excel">Export all</button></div></div>
 <div class="imageNavigation row"><button id="previousImage">← Previous image</button><span id="imagePosition"></span><button id="nextImage">Next image →</button><a id="openSelectedImage" class="hidden" target="_blank" rel="noopener">Open source image</a></div>
 <div id="exportStatus" role="status" aria-live="polite"></div>
+<section id="sheetStatus" class="card sheetStatus hidden" role="status" aria-live="polite" aria-atomic="true"><span id="sheetStatusBadge" class="pill"></span><h3 id="sheetStatusTitle"></h3><p id="sheetStatusDetail"></p><button id="reviewAvailable" class="hidden">Review available records</button></section>
+<div id="sheetContent" class="hidden">
 <p id="summary" class="muted"></p>
 <div class="row legend muted"><span><i class="dot amber"></i>Uncertain characters</span><span><i class="dot red"></i>Field not located</span><span><i class="dot green"></i>Field confirmed by you</span><span>White cells: OCR reading, still editable</span></div>
 <nav id="recordPager" class="row" aria-label="Record groups"><button id="previousRecords">← Previous 50 records</button><span id="recordRange" role="status"></span><button id="nextRecords">Next 50 records →</button></nav>
 <div id="sheetWrap"><table id="sheet" aria-label="OCR review spreadsheet"></table></div>
-<p id="sources" class="muted"></p><p id="exportScope" class="muted">Export includes every record in the project, with your saved corrections. Unreviewed alternatives export as [i/t]; unreadable or unlocated text exports as [?].</p>
+<p id="sources" class="muted"></p>
 <p id="trainLater" class="muted">Model training is planned for a later version. Saving or exporting corrections does not retrain the OCR.</p>
+</div><p id="exportScope" class="muted">Export includes every record in the project, with your saved corrections. Unreviewed alternatives export as [i/t]; unreadable or unlocated text exports as [?].</p>
 </div></div></section>
 <section id="coverage" class="card hidden"><h2>Record and page checks</h2><p id="coverageSummary"></p><details><summary>Inspect fragments, continuation joins and page warnings</summary><div id="coverageList"></div></details><p class="muted">A layout join is a candidate, not a verified boundary. Unassigned fragments and source pages remain available; unresolved page boundaries need review before the batch is accepted.</p></section><section id="empty" class="card"><h2>Start a project to convert your images.</h2><p class="muted">You can export without completing every correction. Unresolved readings stay visibly marked.</p></section></main>
 <dialog id="reviewDialog" aria-labelledby="cellTitle"><div class="dialogHead"><div class="row between"><div><h2 id="cellTitle"></h2><div id="cellMeta" class="muted"></div></div><button id="closeDialog" class="close" aria-label="Close cell review">×</button></div></div><div class="dialogBody"><p id="dialogError" class="error" role="alert"></p><p id="cellNotice" class="muted"></p><details id="rectTools" class="card hidden"><summary id="rectHeading">Draw field area</summary>

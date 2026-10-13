@@ -9,7 +9,7 @@ const queued={id:'waiting',status:'scanning',progress:'Waiting for the local sca
 const jobs=[{id:'waiting',name:'New batch',status:'scanning'},{id:'runner',name:'Running batch',status:'scanning'},{id:'other',name:'Other waiting batch',status:'scanning'}];
 const live={runner:{status:'scanning',progress:'Page 54/398',scan_stats:{stage:'reading',page:54}},other:{status:'scanning',scan_stats:{stage:'queued'}}};
 const sandbox={cancelAvailable:true,state:{id:'waiting',pages:Array(398),records:[]},URLSearchParams,Date:{now:()=>now},$:el,
- showImageCount(){},setInterval(){},api:async url=>{calls.push(url);return url==='/api/jobs'?jobs:live[new URLSearchParams(url.split('?')[1]).get('job')];}};
+ showImageCount(){},paintImageStatuses(){},paintReviewState(){},setInterval(){},api:async url=>{calls.push(url);return url==='/api/jobs'?jobs:live[new URLSearchParams(url.split('?')[1]).get('job')];}};
 vm.createContext(sandbox);vm.runInContext(source.slice(start,end),sandbox);
 (async()=>{
  sandbox.paintScan(queued);await sandbox.refreshScanQueue('waiting');

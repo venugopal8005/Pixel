@@ -82,6 +82,7 @@ function paintScan(snapshot){
  $('scanPages').textContent=(stats.page||'—')+' / '+(stats.page_count||state?.pages?.length||'—');
  $('scanRecords').textContent=stats.record_candidates??state?.records?.length??0;$('scanRegions').textContent=stats.text_regions??state?.records?.reduce((n,r)=>n+r.lines.length,0)??0;
  $('scanDiagnostic').textContent=snapshot.error||'';$('progress').textContent='';updateScanClock();
+ if(state?.id===snapshot.id){paintImageStatuses();paintReviewState();}
 }
 function updateScanClock(){if(!scanDisplay)return;const st=scanDisplay.scan_stats||{},queued=scanDisplay.status==='scanning'&&st.stage==='queued';const elapsed=queued&&st.queued_at?Date.now()/1000-st.queued_at:scanDisplay.status==='scanning'&&st.started_at?Date.now()/1000-st.started_at:st.elapsed_seconds;
  $('scanElapsed').textContent=Number.isFinite(elapsed)?(queued?'Waiting ':'Elapsed ')+Math.floor(Math.max(0,elapsed)/60)+'m '+String(Math.floor(Math.max(0,elapsed)%60)).padStart(2,'0')+'s':'';}
@@ -131,15 +132,69 @@ $('confirmCancel').onclick=async()=>{
 $('newResults').onclick=()=>sync(true).catch(error);
 function reviewAvailability(){
  const partial=state.status!=='ready',available=state.ready_record_total??state.project_record_total??rows.length;
- $('reviewAvailability').classList.toggle('hidden',!partial);
+ $('reviewAvailability').classList.toggle('hidden',!partial||!available);
  $('reviewAvailabilityText').textContent=(state.status==='scanning'?'Scanning continues. ':state.status==='cancelled'?'Scan cancelled. ':'Scan stopped. ')+
   available+' records available · '+(state.completed_pages||0)+' / '+state.pages.length+' images fully scanned. '+
   (state.status==='scanning'?'You can review the available records now. ':'Saved results remain editable. ')+
   (state.pending_record_total?state.pending_record_total+' unfinished record candidates are held until their continuation is resolved.':'');
  $('export').textContent=partial?'Export available':'Export all';$('export').disabled=!available;
+ $('export').classList.toggle('hidden',!available);$('exportScope').classList.toggle('hidden',!available);
  $('export').title=partial?'Export the available records; the workbook will be labelled as a partial export':'Export every record in the project to Excel';
  $('exportScope').textContent=partial?'Export includes available records and saved corrections, with a partial-export notice. Unscanned pages and unfinished records are not included.':'Export includes every record in the project, with your saved corrections. Unreviewed alternatives export as [i/t]; unreadable or unlocated text exports as [?].';
 }
+
+function imageReviewPhase(page){
+ const snapshot=scanDisplay?.id===state.id?scanDisplay:state,stats=snapshot.scan_stats||{};
+ if(['ready','continuation','partial','not_scanned'].includes(page.status))return page.status;
+ if(['cancelled','error'].includes(snapshot.status))return page.records?'partial':'not_scanned';
+ const done=Math.max(state.completed_pages||0,stats.completed_pages||0);
+ // Progress can arrive before the workspace with the new rows. Keep a loading
+ // state until that workspace arrives instead of claiming there are no records.
+ if(snapshot.status==='ready'||page.number<=done)return 'publishing';
+ if(stats.stage==='queued')return 'waiting';
+ if(page.number===(stats.page||done+1)){
+  if(stats.stage==='loading')return 'preparing';
+  if(stats.stage==='cancelling')return 'cancelling';
+  if(['reading','saving'].includes(stats.stage))return 'scanning';
+ }
+ return page.status||'waiting';
+}
+function paintImageStatuses(){
+ const pages=new Map((state.image_navigation||[]).map(page=>[page.file,page]));
+ for(const button of $('imageList').children){
+  const page=pages.get(button.dataset.file);if(!page)continue;
+  const phase=imageReviewPhase(page),label={ready:'Ready',continuation:'Ready · continuation pending',scanning:'Scanning',waiting:'Waiting to scan',preparing:'Preparing',publishing:'Loading results',cancelling:'Stopping scan',partial:'Partly scanned',not_scanned:'Not scanned'}[phase]||'';
+  const text=label+' · '+page.records+' record'+(page.records===1?'':'s')+(page.shared?' · '+page.shared+' shared':'');
+  const badge=button.querySelector('small');if(badge&&badge.textContent!==text)badge.textContent=text;
+ }
+}
+function emptyReviewStatus(){
+ const snapshot=scanDisplay?.id===state.id?scanDisplay:state,stats=snapshot.scan_stats||{};
+ const selected=state.image_navigation?.find(page=>page.file===state.image_filter);
+ const phase=selected?imageReviewPhase(selected):null,image=selected?'image '+selected.number:'this project';
+ if(snapshot.status==='cancelled')return {badge:'Scan cancelled',title:'No results available for '+image,detail:'The scan stopped before records were available here. Uploaded images and existing results are saved. Use Retry these images above to start a new scan.'};
+ if(snapshot.status==='error')return {badge:'Scan stopped',title:'No results available for '+image,detail:'The scan stopped after an error. Existing results are saved. You can retry the images using the controls above.'};
+ if(phase==='publishing'||(snapshot.status==='ready'&&state.status==='scanning'))return {badge:'Loading results',title:'Preparing the spreadsheet',detail:'The scan has finished reading this view. Its records are loading and will appear here automatically.'};
+ if(phase==='continuation')return {badge:'Continuation pending',title:'Waiting for a continued record',detail:'This image has been scanned. Its unfinished records will appear when the adjoining image is read and the continuation is resolved.'};
+ if(phase==='ready'||snapshot.status==='ready')return {badge:'Scan complete',title:'No records detected in '+image,detail:'Open the source image to check its contents. Any records found in other images remain available under All images.'};
+ if(stats.stage==='cancelling')return {badge:'Stopping scan',title:'Cancelling the scan',detail:'Pixel is finishing the current OCR operation. Existing results and uploaded images will be kept.'};
+ if(phase==='waiting')return {badge:'Waiting',title:'Waiting to scan '+image,detail:stats.stage==='queued'?'This project is waiting for the local scanner. Results will appear here automatically when this image is scanned.':'This image is in the queue. Earlier images are being scanned first. Its spreadsheet will appear here automatically when records are ready.'};
+ if(stats.stage==='queued')return {badge:'Waiting',title:'Waiting for the scanner',detail:'Your images are queued. The spreadsheet will appear automatically as soon as the first records are ready.'};
+ if(stats.stage==='loading')return {badge:'Preparing',title:'Preparing the local scanner',detail:'Pixel is loading the OCR model. The spreadsheet will appear here automatically when records are ready.'};
+ const number=selected?.number||stats.page||(state.completed_pages||0)+1;
+ return {badge:'In progress',title:'Scanning image '+number+' of '+state.pages.length,detail:'Pixel is reading the image and mapping its fields. The spreadsheet will appear here automatically when records are ready.'};
+}
+function paintReviewState(){
+ const ready=rows.length>0;
+ $('sheetContent').classList.toggle('hidden',!ready);$('sheetStatus').classList.toggle('hidden',ready);
+ $('reviewNext').classList.toggle('hidden',!ready);
+ if(ready)return;
+ const status=emptyReviewStatus();
+ for(const [id,value] of [['sheetStatusBadge',status.badge],['sheetStatusTitle',status.title],['sheetStatusDetail',status.detail]])if($(id).textContent!==value)$(id).textContent=value;
+ $('viewContext').textContent='';
+ $('reviewAvailable').classList.toggle('hidden',!(state.ready_record_total>0&&state.image_filter));
+}
+$('reviewAvailable').onclick=()=>chooseImage(null);
 
 let sidebarSignature='',sidebarJob=null;
 function filterImageList(){
@@ -158,12 +213,13 @@ function drawImageNavigation(){
    button.setAttribute('aria-label','Image '+page.number+': '+page.name);button.onclick=()=>chooseImage(page.file);
    const img=document.createElement('img');img.src='/thumbnail?'+new URLSearchParams({job:state.id,name:page.file});img.alt='';img.loading='lazy';img.decoding='async';img.width=48;img.height=64;
    const text=document.createElement('span'),title=document.createElement('strong'),filename=document.createElement('span'),count=document.createElement('small');
-   title.textContent='Image '+page.number;filename.textContent=page.name;count.textContent=({ready:'Ready',continuation:'Ready · continuation pending',scanning:'Scanning',waiting:'Waiting',partial:'Partly scanned',not_scanned:'Not scanned'}[page.status]||'')+' · '+page.records+' record'+(page.records===1?'':'s')+(page.shared?' · '+page.shared+' shared':'');
+   title.textContent='Image '+page.number;filename.textContent=page.name;
    text.append(title,filename,count);button.append(img,text);$('imageList').append(button);
   }
   $('imageList').scrollTop=sidebarTop;$('imageList').scrollLeft=sidebarLeft;
  }
  for(const button of $('imageList').children)button.setAttribute('aria-pressed',String(button.dataset.file===state.image_filter));
+ paintImageStatuses();
  $('imageNavCount').textContent=images.length;
  $('allImages').textContent='All images · '+(state.ready_record_total??state.project_record_total??rows.length)+' records';$('allImages').setAttribute('aria-pressed',String(!selected));
  $('viewTitle').textContent=selected?'Image '+selected.number+' · '+selected.name:'All images';
@@ -224,8 +280,39 @@ async function navigateCell(direction,nextGroupOnly=false){
  $('notice').textContent=state.image_filter?'No more unsure cells in this image. You can inspect any cell or choose another image.':'No more unsure cells in this direction. You can still inspect any cell.';
 }
 
-function drawCoverage(){const fragments=state.records.flatMap(r=>(r.fragments||[]).map(f=>({...f,record:r})));$('coverage').classList.remove('hidden');$('coverageSummary').textContent=fragments.length?fragments.length+' fragments · '+fragments.filter(f=>f.status==='continuation_inferred').length+' inferred continuations · '+fragments.filter(f=>f.status==='unassigned').length+' unassigned fragments':'This older scan has no saved fragment ledger. Source lines and full pages remain available.';$('coverageList').replaceChildren();for(const warning of state.page_issues||[]){const p=document.createElement('p');p.className='error';p.textContent=warning;$('coverageList').append(p);}for(const f of fragments){const box=document.createElement('div');box.className='coverageItem';const label=document.createElement('p');label.textContent=f.record.record_id+' · '+f.status.replaceAll('_',' ')+' · '+f.page+' · column '+(f.column+1);const link=document.createElement('a');link.href=imageURL(f.file);link.target='_blank';link.rel='noopener';link.textContent='Open source page';const note=document.createElement('p');note.className='muted';note.textContent=f.record.notes.join(' ');box.append(label,link,note);$('coverageList').append(box);}}
-function drawSheet(){const table=$('sheet');table.replaceChildren();const head=table.createTHead().insertRow();for(let f=0;f<=36;f++){const th=document.createElement('th');th.scope='col';th.textContent=state.schema_version===2?names[f]:(f===0?'ID':'Field '+f);const small=document.createElement('small');small.textContent=state.schema_version===2?'Column '+(f+1):names[f];th.append(small);head.append(th);}const body=table.createTBody();let pending=0,confirmed=0,ruleWarnings=0;rows.forEach((r,ri)=>{const tr=body.insertRow();r.cells.forEach((c,fi)=>{pending+=unsure(c)?1:0;confirmed+=c.manual?1:0;ruleWarnings+=c.rule_issues?.length?1:0;const td=document.createElement(fi===0?'th':'td');if(fi===0)td.scope='row';const b=document.createElement('button');b.className='cell '+(c.manual?'confirmed':c.status);b.dataset.row=ri;b.dataset.field=fi;b.setAttribute('aria-label','Row '+projectRow(ri)+', '+names[fi]+': '+(c.value??'blank'));b.textContent=c.value===null?'—':(c.value===''?'(empty)':c.value);const small=document.createElement('small');small.textContent=c.manual?(c.rule_issues?.length?'Confirmed · rule warning':'Confirmed'):c.rule_issues?.length?'Rule needs review':c.status==='unmapped'?(c.candidate&&c.sources.length?'Locate field / review crop':'Draw field area'):c.pending?c.pending+' unsure region'+(c.pending===1?'':'s'):c.rule_actions?.length?'Rule-assisted · unverified':c.status==='blank'?'Blank placeholder':c.status==='generated'?'Generated':'Unreviewed reading';b.append(small);if(fi===0&&state.records[ri].source_images?.length>1){const tag=document.createElement('small');tag.className='sourceTag';tag.textContent='Continued · images '+state.records[ri].source_images.map(file=>state.image_navigation.find(p=>p.file===file)?.number).filter(Boolean).join(' + ');b.append(tag);}b.onclick=()=>openCell(ri,fi);td.append(b);tr.append(td);});});if(!rows.length){const td=body.insertRow().insertCell();td.colSpan=37;td.className='emptySheet';td.textContent=state.status==='scanning'?'No records are ready for review here yet. Completed records will appear automatically; unfinished continuations are held until the adjoining image is read.':state.status==='cancelled'?'No records are available here. This scan was cancelled; unscanned images remain in the project.':state.image_filter?'No records were detected for this image. Open the source image to check it; all project records remain available under All images.':'No records were detected in this project. Inspect the source images and page warnings.';} $('summary').textContent=rows.length+' records shown of '+(state.record_total??rows.length)+(state.image_filter?' in this image':' in the project')+' · '+pending+' cells need review · '+confirmed+' fields confirmed'+(ruleWarnings?' · '+ruleWarnings+' rule warnings':'');const located=rows.reduce((n,r)=>n+(r.field_coverage?.located||0),0),expected=rows.reduce((n,r)=>n+(r.field_coverage?.expected||0),0);if(expected)$('summary').textContent+=' · '+located+'/'+expected+' printed field locations found';$('reviewNext').disabled=!pending&&!hasRecordPage(1);paintRecordPager();drawImageNavigation();reviewAvailability();$('sources').textContent=state.image_filter?'Full continued records are included, even when part of a record is on another image.':'Each row is one record. Use the image sidebar to find its source.';}
+function drawCoverage(){if(!state.records.length&&!state.page_issues?.length){$('coverage').classList.add('hidden');return;}const fragments=state.records.flatMap(r=>(r.fragments||[]).map(f=>({...f,record:r})));$('coverage').classList.remove('hidden');$('coverageSummary').textContent=fragments.length?fragments.length+' fragments · '+fragments.filter(f=>f.status==='continuation_inferred').length+' inferred continuations · '+fragments.filter(f=>f.status==='unassigned').length+' unassigned fragments':'This older scan has no saved fragment ledger. Source lines and full pages remain available.';$('coverageList').replaceChildren();for(const warning of state.page_issues||[]){const p=document.createElement('p');p.className='error';p.textContent=warning;$('coverageList').append(p);}for(const f of fragments){const box=document.createElement('div');box.className='coverageItem';const label=document.createElement('p');label.textContent=f.record.record_id+' · '+f.status.replaceAll('_',' ')+' · '+f.page+' · column '+(f.column+1);const link=document.createElement('a');link.href=imageURL(f.file);link.target='_blank';link.rel='noopener';link.textContent='Open source page';const note=document.createElement('p');note.className='muted';note.textContent=f.record.notes.join(' ');box.append(label,link,note);$('coverageList').append(box);}}
+function drawSheet(){
+ drawImageNavigation();reviewAvailability();paintReviewState();
+ const table=$('sheet');table.replaceChildren();
+ if(!rows.length){$('reviewNext').disabled=true;return;}
+ const head=table.createTHead().insertRow();
+ for(let f=0;f<=36;f++){
+  const th=document.createElement('th');th.scope='col';th.textContent=state.schema_version===2?names[f]:(f===0?'ID':'Field '+f);
+  const small=document.createElement('small');small.textContent=state.schema_version===2?'Column '+(f+1):names[f];th.append(small);head.append(th);
+ }
+ const body=table.createTBody();let pending=0,confirmed=0,ruleWarnings=0;
+ rows.forEach((r,ri)=>{
+  const tr=body.insertRow();
+  r.cells.forEach((c,fi)=>{
+   pending+=unsure(c)?1:0;confirmed+=c.manual?1:0;ruleWarnings+=c.rule_issues?.length?1:0;
+   const td=document.createElement(fi===0?'th':'td');if(fi===0)td.scope='row';
+   const b=document.createElement('button');b.className='cell '+(c.manual?'confirmed':c.status);b.dataset.row=ri;b.dataset.field=fi;
+   b.setAttribute('aria-label','Row '+projectRow(ri)+', '+names[fi]+': '+(c.value??'blank'));b.textContent=c.value===null?'—':(c.value===''?'(empty)':c.value);
+   const small=document.createElement('small');
+   small.textContent=c.manual?(c.rule_issues?.length?'Confirmed · rule warning':'Confirmed'):c.rule_issues?.length?'Rule needs review':c.status==='unmapped'?(c.candidate&&c.sources.length?'Locate field / review crop':'Draw field area'):c.pending?c.pending+' unsure region'+(c.pending===1?'':'s'):c.rule_actions?.length?'Rule-assisted · unverified':c.status==='blank'?'Blank placeholder':c.status==='generated'?'Generated':'Unreviewed reading';
+   b.append(small);
+   if(fi===0&&state.records[ri].source_images?.length>1){
+    const tag=document.createElement('small');tag.className='sourceTag';tag.textContent='Continued · images '+state.records[ri].source_images.map(file=>state.image_navigation.find(p=>p.file===file)?.number).filter(Boolean).join(' + ');b.append(tag);
+   }
+   b.onclick=()=>openCell(ri,fi);td.append(b);tr.append(td);
+  });
+ });
+ $('summary').textContent=rows.length+' records shown of '+(state.record_total??rows.length)+(state.image_filter?' in this image':' in the project')+' · '+pending+' cells need review · '+confirmed+' fields confirmed'+(ruleWarnings?' · '+ruleWarnings+' rule warnings':'');
+ const located=rows.reduce((n,r)=>n+(r.field_coverage?.located||0),0),expected=rows.reduce((n,r)=>n+(r.field_coverage?.expected||0),0);
+ if(expected)$('summary').textContent+=' · '+located+'/'+expected+' printed field locations found';
+ $('reviewNext').disabled=!pending&&!hasRecordPage(1);paintRecordPager();
+ $('sources').textContent=state.image_filter?'Full continued records are included, even when part of a record is on another image.':'Each row is one record. Use the image sidebar to find its source.';
+}
 function current(){return previewCell||rows[active.row].cells[active.field];}
 function record(){return state.records[active.row];}
 function entry(ref){const line=record().lines.find(l=>l.id===ref.line),source=line.segments.find(s=>s.id===ref.id),rule=current().candidate?null:current().rule_segments?.[ref.id];return {...ref,line,seg:rule?{...source,...rule}:source,rule};}
