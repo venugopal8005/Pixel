@@ -1,5 +1,16 @@
 # Pixel OCR development baseline
 
+## Faint record borders — October 13, 2026
+
+Pages with very light borders now use a fallback that checks column edges and
+text spacing before splitting records. Original pixels are kept for OCR, and
+inferred boundaries are labelled for review. Page-order checks also support
+double image extensions such as `.jpg.jpeg`. Restart the app and scan again to
+apply this detector to previously imported images; existing saved results and
+corrections are not replaced automatically. The three supplied 7AE pages produced
+35 fragments joined into 30 records. This validates record coverage for that
+batch; field mapping and text still require review.
+
 ## Progressive review update — October 12, 2026
 
 The spreadsheet becomes editable after each completed image while the remaining

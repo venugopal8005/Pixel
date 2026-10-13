@@ -92,7 +92,7 @@ def decorate(state,record,cells):
 def adjacent_pages(previous,current):
     if previous==current:return True
     def number(name):
-        m=re.search(r'(\d+)(?:_enc)?\.[^.]+$',name,re.I)
+        m=re.search(r'(\d+)(?:_enc)?(?:\.(?:jpe?g|png))+$',name,re.I)
         return (name[:m.start()],int(m.group(1))) if m else None
     a,b=number(previous),number(current)
     return a is None or b is None or (a[0]==b[0] and b[1]==a[1]+1)

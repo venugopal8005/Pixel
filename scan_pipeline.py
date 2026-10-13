@@ -69,9 +69,13 @@ def scan_project(state,app):
                 fragment=dict(id=f'p{page_index}-b{block_index}',page=page['name'],file=page['file'],box=block['box'],
                     column=block['column'],header_ocr=raw,status='continuation_inferred' if joined else ('record_start' if record_id else 'unassigned'),
                     open_bottom=block['open_bottom'])
+                if block.get('layout_method'):fragment['layout_method']=block['layout_method']
                 record.setdefault('fragments',[]).append(fragment)
                 if block.get('layout_failed'):record['notes'].append('Page layout was not recognized. Entire page retained as an unassigned fragment; it may contain several records.')
                 if block.get('short_fragment'):record['notes'].append('Short text-bearing fragment retained; inspect its record assignment.')
+                if block.get('layout_method')=='faint_rules_and_spacing':
+                    note='Faint borders: record boundary inferred from ruled columns and text spacing; inspect the source crop.'
+                    if note not in record['notes']:record['notes'].append(note)
                 previous=dict(record=record,open_bottom=block['open_bottom'],page=page['name'])
                 reading,_=engine(np.asarray(crop)[:,:,::-1].copy(),use_cls=False,use_rec=False)
                 regions=[] if reading is None else list(reading)

@@ -16,7 +16,7 @@ def groups(indices):
         else:groups[-1].append(n)
     return groups
 
-def blocks(image):
+def ruled_blocks(image):
     gray=np.asarray(image.convert('L'));height,width=gray.shape
     ink=(gray<160).astype(np.uint8)*255
     vertical=cv2.morphologyEx(ink,cv2.MORPH_OPEN,np.ones((max(50,height//8),1),np.uint8))
@@ -54,17 +54,83 @@ def blocks(image):
                                first_in_column=index==0,open_bottom=open_bottom,short_fragment=y1-y0<35))
     return result
 
+def faint_rule_blocks(image):
+    """Recover faint ruled columns and split at unusually wide text-free gaps.
+
+    Light pixels provide layout evidence only. Text bounds come from dark pixels,
+    and recognition still uses the untouched source image.
+    """
+    gray=np.asarray(image.convert('L'));height,width=gray.shape
+    dark=gray<160
+    light=(gray<253).astype(np.uint8)*255
+    vertical=cv2.morphologyEx(light,cv2.MORPH_OPEN,np.ones((max(50,height//8),1),np.uint8))
+    horizontal=cv2.morphologyEx(light,cv2.MORPH_OPEN,np.ones((1,max(80,width//5)),np.uint8))
+    positions=np.where((vertical>0).sum(axis=0)>height*.12)[0]
+    clusters=[]
+    for x in map(int,positions):
+        if not clusters or x-clusters[-1][-1]>max(4,width//40):clusters.append([x])
+        else:clusters[-1].append(x)
+    # Require actual edge and gutter evidence, never equal-width invented boxes.
+    if len(clusters)!=3:raise ValueError('Faint borders do not identify two columns')
+    left=clusters[0][0];middle=int(np.median(clusters[1]));right=clusters[2][-1]
+    columns=[(left,middle),(middle,right)]
+    if not all(width*.3<b-a<width*.6 for a,b in columns):
+        raise ValueError('Faint column widths are inconsistent')
+    outside=dark.copy();outside[:,max(0,left-3):min(width,right+4)]=False
+    if outside.sum()>max(40,dark.sum()*.01):raise ValueError('Text lies outside the faint columns')
+    result=[]
+    for col,(left,right) in enumerate(columns):
+        x0=max(0,left+2);x1=min(width,right-1)
+        counts=dark[:,x0:x1].sum(axis=1)
+        bands=groups(np.where(counts>=max(3,int((x1-x0)*.008)))[0])
+        if len(bands)<4:raise ValueError('Too little text to validate faint record spacing')
+        # Adapt to printed text size, not an expected count or equal-height rows.
+        heights=[len(b) for b in bands if len(b)>=3]
+        if not heights:raise ValueError('No consistent text bands inside faint columns')
+        line_height=float(np.median(heights))
+        gap_limit=max(12,int(round(line_height*1.25)))
+        breaks=[(a[-1]+b[0])//2 for a,b in zip(bands,bands[1:]) if b[0]-a[-1]-1>=gap_limit]
+        if len(breaks)<2:raise ValueError('Too few clear record gaps inside faint columns')
+        content=np.where(counts>0)[0]
+        top=max(0,int(content[0])-3);bottom=min(height,int(content[-1])+4)
+        boundaries=[top,*breaks,bottom]
+        line_rows=(horizontal[:,x0:x1]>0).sum(axis=1)>(x1-x0)*.45
+        # Look for a real closing rule after the last printed line. Otherwise the
+        # bottom block can continue at the next column or page.
+        closing=np.where(line_rows[int(content[-1])+1:min(height,int(content[-1])+max(12,int(line_height*2)))])[0]
+        bottom_ruled=bool(len(closing))
+        for index,(y0,y1) in enumerate(zip(boundaries,boundaries[1:])):
+            result.append(dict(column=col,block=index,box=[x0,y0,x1,y1],first_in_column=index==0,
+                open_bottom=index==len(boundaries)-2 and not bottom_ruled,short_fragment=y1-y0<35,
+                layout_method='faint_rules_and_spacing'))
+    return result
+
+
+def blocks(image):
+    try:return ruled_blocks(image)
+    except ValueError as original:
+        try:return faint_rule_blocks(image)
+        except ValueError:raise original
+
+
 def header_crop(crop):
-    area=crop.crop((0,0,min(crop.width,100),min(crop.height,45)))
+    area=crop.crop((0,0,min(crop.width,128),min(crop.height,45)))
     occupied=np.where((np.asarray(area.convert('L'))<160).sum(axis=1)>=4)[0]
     bands=[]
     for y in map(int,occupied):
         if not bands or y>bands[-1][-1]+3:bands.append([y])
         else:bands[-1].append(y)
     bands=[b for b in bands if b[-1]-b[0]>=5]
-    if not bands:return area.crop((0,0,area.width,min(22,area.height)))
-    band=bands[0]
-    return area.crop((0,max(0,band[0]-2),area.width,min(area.height,band[-1]+3)))
+    if not bands:line=area.crop((0,0,area.width,min(22,area.height)))
+    else:
+        band=bands[0]
+        line=area.crop((0,max(0,band[0]-2),area.width,min(area.height,band[-1]+3)))
+    # Faint outside borders can add padding before the first digit. Remove that
+    # padding before taking the ID window, so it neither clips the final digit
+    # nor reads the following "Lid" prefix as extra digits.
+    columns=np.where((np.asarray(line.convert('L'))<160).sum(axis=0)>=2)[0]
+    left=max(0,int(columns[0])-2) if len(columns) else 0
+    return line.crop((left,0,min(line.width,left+100),line.height))
 
 def main():
     from rapidocr_onnxruntime import RapidOCR
@@ -89,7 +155,7 @@ def main():
                 alt_text=' '.join(r[0] for r in (alt or []));alternatives.append(alt_text)
                 match=re.match(r'^\s*(\d{10})(?!\d)',alt_text)
             if match is None:
-                fixed=crop.crop((0,0,min(crop.width,100),min(crop.height,17)))
+                fixed=crop.crop((0,0,header.width,min(crop.height,17)))
                 alt,_=engine(np.asarray(fixed)[:,:,::-1].copy(),use_det=False,use_cls=False)
                 alt_text=' '.join(r[0] for r in (alt or []));alternatives.append(alt_text)
                 match=re.match(r'^\s*(\d{10})(?!\d)',alt_text)

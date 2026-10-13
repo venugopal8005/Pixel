@@ -182,7 +182,7 @@ def change_boundary(state,key,action,fragment_id=None):
 def read_header(engine,crop):
     from detect_records import header_crop
     head=header_crop(crop);raw=''
-    for candidate in (head,head.resize((head.width*3,head.height*3)),crop.crop((0,0,min(crop.width,100),min(crop.height,17)))):
+    for candidate in (head,head.resize((head.width*3,head.height*3)),crop.crop((0,0,head.width,min(crop.height,17)))):
         reading,_=engine(np.asarray(candidate.convert('RGB'))[:,:,::-1].copy(),use_det=False,use_cls=False)
         value=''.join(r[0] for r in reading or [])
         if not raw:raw=value
