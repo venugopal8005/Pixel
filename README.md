@@ -1,8 +1,23 @@
 # Pixel OCR development baseline
 
+## Progressive review update — October 12, 2026
+
+The spreadsheet becomes editable after each completed image while the remaining
+images scan. Unfinished continuation records are held back; page checkpoints merge
+saved character edits, field confirmations and manual crop selections. Background
+updates leave open editors and unsaved drafts alone. Queued and running scans can
+be cancelled while keeping their images and partial results. Partial Excel exports
+are labelled; final exports still include the whole project. Upload progress and
+name-validation messages now appear above the upload list. Interrupted scans resume
+from the last completed page after restarting the app. See [APP-GUIDE.md](APP-GUIDE.md).
+
 ## Current repository snapshot — October 3, 2026
 
 The current local pilot uses the spreadsheet review interface on port **8767**.
+The current spreadsheet interface supports up to **400 images per project**, with
+ordered single-image transfers, resumable uploads, 50-record review groups, and
+full-project Excel export. See the large-batch limits and validation notes in
+[APP-GUIDE.md](APP-GUIDE.md#large-batches--october-11-2026).
 Start with [APP-GUIDE.md](APP-GUIDE.md) for the workflow and
 [PILOT-WORK.md](PILOT-WORK.md) for implemented features and validation limits.
 [REPOSITORY-HANDOFF.md](REPOSITORY-HANDOFF.md) describes what this source snapshot

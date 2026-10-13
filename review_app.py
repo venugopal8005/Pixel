@@ -19,11 +19,14 @@ from field_constraints import field_coverage
 from field_regions import candidate_for,selected_region,review_record
 from field_crop import CropService,frames as crop_frames,archive_selection,ASSET
 import diagnostics
+from batch_upload import BatchUpload
+from scan_state import REVIEW_KEYS,record_ready,ready_records,completed_pages,export_snapshot
 
 ROOT=Path(__file__).resolve().parent
 DATA=ROOT/'outputs/review-app';DATA.mkdir(parents=True,exist_ok=True)
 LOCK=threading.RLock();SCAN_LOCK=threading.Lock();TOKEN=secrets.token_urlsafe(32)
 LIVE_PROGRESS={}
+SCAN_CANCEL=set();EXPORT_LOCKS={}
 NODE=Path('C:/Users/Dwight/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin/node.exe')
 BUILD=diagnostics.build_info(ROOT)
 
@@ -41,10 +44,19 @@ def save(state):
         target=folder(state['id'])/'state.json';tmp=target.with_name('state-'+uuid.uuid4().hex+'.tmp')
         tmp.write_text(json.dumps(state,ensure_ascii=False),encoding='utf-8')
         for attempt in range(9):
-            try:tmp.replace(target);return
+            try:tmp.replace(target);break
             except PermissionError:
                 if attempt==8:raise
                 time.sleep(min(.025*2**attempt,.4))
+        summary=job_summary(state)
+        meta=target.with_name('summary-'+uuid.uuid4().hex+'.tmp')
+        try:
+            meta.write_text(json.dumps(summary),encoding='utf-8')
+            meta.replace(target.with_name('summary.json'))
+        except OSError:
+            # A cache failure must not invalidate the saved OCR/corrections.
+            try:meta.unlink(missing_ok=True)
+            except OSError:pass
 
 def load(job):
     with LOCK:return json.loads((folder(job)/'state.json').read_text(encoding='utf-8'))
@@ -52,10 +64,58 @@ def load(job):
 def review_state(state):
     return dict(state,records=[dict(review_record(state,r),crop_frames=crop_frames(state,r)) for r in state['records']])
 
+def job_summary(s):
+    return dict(id=s['id'],name=s.get('project_name','Saved scan '+s['id'][:8]),status=s['status'],progress=s.get('progress',''),
+        pages=len(s['pages']),records=len(s['records']),created=s.get('created_at',''))
+
 def list_jobs():
     with LOCK:
-        states=[load(p.parent.name) for p in sorted(DATA.glob('*/state.json'),key=lambda p:p.stat().st_mtime,reverse=True)]
-    return [dict(id=s['id'],name=s.get('project_name','Saved scan '+s['id'][:8]),status=s['status'],progress=s['progress'],pages=len(s['pages']),records=len(s['records']),created=s.get('created_at','')) for s in states]
+        summaries=[]
+        for p in sorted(DATA.glob('*/state.json'),key=lambda p:p.stat().st_mtime,reverse=True):
+            meta=p.with_name('summary.json')
+            try:
+                if meta.stat().st_mtime_ns<p.stat().st_mtime_ns:raise ValueError('Stale summary')
+                summaries.append(json.loads(meta.read_text(encoding='utf-8')))
+            except (OSError,ValueError):summaries.append(job_summary(load(p.parent.name)))
+        return summaries
+
+def enqueue_scan(state):
+    if not state['records']:state.update(progressive_scan=True,completed_pages=0)
+    publish_progress(state,'queued',page_count=len(state['pages']),queued_at=state.get('scan_stats',{}).get('queued_at',time.time()))
+    save(state)
+    threading.Thread(target=scan,args=(state,),daemon=True).start()
+
+def save_scan_state(state):
+    """The scanner owns OCR, while reviewers own corrections and crop selections."""
+    with LOCK:
+        try:latest=load(state['id'])
+        except FileNotFoundError:latest={}
+        for key in REVIEW_KEYS:
+            if key in latest:state[key]=latest[key]
+        if latest.get('cancel_requested'):state['cancel_requested']=True
+        state['review_revision']=max(state.get('review_revision',0),latest.get('review_revision',0))+1
+        stats=state.setdefault('scan_stats',{})
+        stats.update(ready_records=len(ready_records(state)),completed_pages=completed_pages(state),review_revision=state['review_revision'])
+        if state['status'] in ('ready','cancelled','error'):
+            stats['stage']='complete' if state['status']=='ready' else state['status']
+            if state['status']=='ready':stats['percent']=100
+            else:stats['percent']=min(99,stats.get('percent',0))
+        if stats.get('started_at'):stats['elapsed_seconds']=round(time.time()-stats['started_at'],1)
+        save(state)
+
+def check_scan_cancel(state):
+    from scan_pipeline import ScanCancelled
+    if state['id'] in SCAN_CANCEL or state.get('cancel_requested'):raise ScanCancelled()
+
+def cancel_scan(job):
+    with LOCK:
+        state=load(job)
+        if state['status']!='scanning':return progress_snapshot(state)
+        SCAN_CANCEL.add(job);state['cancel_requested']=True
+        state['scan_stats']=dict(get_progress(job).get('scan_stats',{}))
+        state['progress']='Cancelling the scan; finishing the current OCR operation. Saved results will be kept.'
+        save(state);publish_progress(state,'cancelling')
+        return progress_snapshot(state)
 
 def progress_snapshot(state):
     return dict(id=state['id'],status=state['status'],progress=state.get('progress',''),
@@ -66,22 +126,26 @@ def publish_progress(state,stage,**values):
     stats.update(stage=stage,**values)
     if 'started_at' in stats:stats['elapsed_seconds']=round(time.time()-stats['started_at'],1)
     stats['updated_at']=time.time()
-    with LOCK:LIVE_PROGRESS[state['id']]=progress_snapshot(state)
+    with LOCK:
+        snapshot=progress_snapshot(state)
+        if state['id'] in SCAN_CANCEL and state['status']=='scanning':
+            snapshot['scan_stats']['stage']='cancelling'
+            snapshot['progress']='Cancelling the scan; finishing the current OCR operation. Saved results will be kept.'
+        LIVE_PROGRESS[state['id']]=snapshot
 
 def get_progress(job):
     folder(job) # Validate even when using an in-memory snapshot.
     with LOCK:return LIVE_PROGRESS.get(job) or progress_snapshot(load(job))
 
 def retry_scan(source):
-    if source['status']!='error':raise ValueError('Only a failed scan can be retried')
+    if source['status'] not in ('error','cancelled'):raise ValueError('Only a stopped scan can be retried')
     job=uuid.uuid4().hex;directory=folder(job);directory.mkdir()
     now=datetime.now().astimezone()
     state=dict(id=job,project_name=source.get('project_name','Saved scan')+' · retry',schema_version=source.get('schema_version',2),
         created_at=now.isoformat(),created_date=now.strftime('%m/%d/%Y'),status='scanning',progress='Waiting for the local scanner',
         pages=[dict(p) for p in source['pages']],records=[],decisions={},history=[],page_issues=[],recovery_of=source['id'])
     for page in state['pages']:shutil.copy2(folder(source['id'])/page['file'],directory/page['file'])
-    save(state);publish_progress(state,'queued',page_count=len(state['pages']),queued_at=time.time())
-    threading.Thread(target=scan,args=(state,),daemon=True).start()
+    save(state);enqueue_scan(state)
     return state
 
 def change_boundary(state,key,action,fragment_id=None):
@@ -127,91 +191,9 @@ def read_header(engine,crop):
     return None,raw
 
 def scan(state):
-    try:
-        from rapidocr_onnxruntime import RapidOCR
-        from detect_records import blocks
-        with SCAN_LOCK:
-            state['progress']='Loading the local OCR model'
-            publish_progress(state,'loading',started_at=time.time(),page_count=len(state['pages']),text_regions=0,record_candidates=0,completed_blocks=0)
-            engine=RapidOCR(intra_op_num_threads=2,inter_op_num_threads=1,text_score=0)
-            previous=None;counter=0;seen=set();state.setdefault('page_issues',[])
-            # Determine the amount of actual layout work before showing a percent.
-            layouts=[]
-            for page in state['pages']:
-                with Image.open(folder(state['id'])/page['file']) as source:image=source.convert('RGB')
-                try:page_blocks=blocks(image)
-                except ValueError as error:
-                    state['page_issues'].append(page['name']+': '+str(error))
-                    page_blocks=[dict(column=0,block=0,box=[0,0,image.width,image.height],first_in_column=False,open_bottom=False,layout_failed=True)]
-                layouts.append(page_blocks)
-            total_blocks=sum(map(len,layouts));completed_blocks=0;last_update=0
-            for page_index,page in enumerate(state['pages']):
-                with Image.open(folder(state['id'])/page['file']) as source:image=source.convert('RGB')
-                if previous and not adjacent_pages(previous['page'],page['name']):
-                    previous['record']['notes'].append('Page order has a gap or reversal; continuation was not joined.')
-                    state['page_issues'].append(page['name']+': page gap/reversal before this image; inspect boundary records.')
-                    previous=None
-                page_blocks=layouts[page_index]
-                for block_index,block in enumerate(page_blocks):
-                    state['progress']=f'Page {page_index+1}/{len(state["pages"])} · record region {block_index+1}/{len(page_blocks)} · {counter} text regions read'
-                    publish_progress(state,'reading',page=page_index+1,filename=page['name'],block=block_index+1,page_blocks=len(page_blocks),
-                        completed_blocks=completed_blocks,total_blocks=total_blocks,percent=round(100*completed_blocks/max(1,total_blocks),1))
-                    crop=image.crop(block['box']);record_id,raw=read_header(engine,crop)
-                    if block.get('layout_failed'):record_id=None
-                    joined=False
-                    if record_id:
-                        record=dict(key=f'record-{len(state["records"])+1}',record_id=record_id,lines=[],notes=['Record ID and field boundaries are provisional.'])
-                        if record_id in seen:record['notes'].append('Duplicate printed ID; both records retained for review.')
-                        seen.add(record_id)
-                        state['records'].append(record)
-                    elif block['first_in_column'] and previous and previous['open_bottom'] and not re.match(r'\s*[A-Z0-9]{10}(?![A-Z0-9])',raw):
-                        record=previous['record'];record['notes'].append('Continuation joined from layout; inspect source.');joined=True
-                    else:
-                        record=dict(key=f'record-{len(state["records"])+1}',record_id='[?]',lines=[],notes=['Unassigned fragment or unreadable record ID; retained for review.'])
-                        state['records'].append(record)
-                    fragment=dict(id=f'p{page_index}-b{block_index}',page=page['name'],file=page['file'],box=block['box'],
-                        column=block['column'],header_ocr=raw,status='continuation_inferred' if joined else ('record_start' if record_id else 'unassigned'),
-                        open_bottom=block['open_bottom'])
-                    record.setdefault('fragments',[]).append(fragment)
-                    if block.get('layout_failed'):record['notes'].append('Page layout was not recognized. Entire page retained as an unassigned fragment; it may contain several records.')
-                    if block.get('short_fragment'):record['notes'].append('Short text-bearing fragment retained; inspect its record assignment.')
-                    previous=dict(record=record,open_bottom=block['open_bottom'],page=page['name'])
-                    # Only locate lines here. read_line performs both recognition
-                    # passes; the previous third recognition pass was discarded.
-                    reading,_=engine(np.asarray(crop)[:,:,::-1].copy(),use_cls=False,use_rec=False)
-                    regions=[] if reading is None else list(reading)
-                    if not regions:record['notes'].append('No text detected in this block.')
-                    for line_index,points in enumerate(regions):
-                        counter+=1
-                        pts=np.asarray(points);x0=max(0,int(pts[:,0].min())-2);y0=max(0,int(pts[:,1].min())-2)
-                        x1=min(crop.width,int(pts[:,0].max())+3);y1=min(crop.height,int(pts[:,1].max())+3)
-                        line_image=crop.crop((x0,y0,x1,y1));name=f'line-{counter}.png';line_image.save(folder(state['id'])/name)
-                        segments=read_line(engine,line_image)
-                        for i,seg in enumerate(segments):seg['id']=f'l{counter}-s{i}'
-                        record['lines'].append(dict(id=f'l{counter}',image=name,page=page['name'],fragment=fragment['id'],segments=segments,
-                            box=[[x0,y0],[x1,y0],[x1,y1],[x0,y1]],source_box=[block['box'][0]+x0,block['box'][1]+y0,block['box'][0]+x1,block['box'][1]+y1]))
-                        if time.monotonic()-last_update>=1:
-                            state['progress']=f'Page {page_index+1}/{len(state["pages"])} · record region {block_index+1}/{len(page_blocks)} · {counter} text regions read'
-                            publish_progress(state,'reading',text_regions=counter,record_candidates=len(state['records']),
-                                percent=round(min(99,100*(completed_blocks+(line_index+1)/max(1,len(regions)))/max(1,total_blocks)),1))
-                            last_update=time.monotonic()
-                    completed_blocks+=1
-                    publish_progress(state,'reading',text_regions=counter,record_candidates=len(state['records']),completed_blocks=completed_blocks,
-                        percent=round(min(99,100*completed_blocks/max(1,total_blocks)),1))
-                    with LOCK:save(state)
-            if previous and previous['open_bottom']:previous['record']['notes'].append('Open bottom: record may continue on a missing page.')
-            state['progress']='Saving the completed scan'
-            publish_progress(state,'saving',text_regions=counter,record_candidates=len(state['records']),percent=99)
-            state['status']='ready';state['progress']=f'{counter} text regions ready for review'
-            state['scan_stats'].update(stage='complete',percent=100)
-            save(state)
-            publish_progress(state,'complete',percent=100)
-    except Exception as error:
-        diagnostic_event('scan_error',job=state['id'],error=str(error),traceback=traceback.format_exc())
-        state['status']='error';state['error']=str(error)
-        publish_progress(state,'error',percent=min(99,state.get('scan_stats',{}).get('percent',0)))
-        try:save(state)
-        except OSError:pass # The live error remains accessible if storage is locked.
+    from scan_pipeline import scan_project
+    scan_project(state,sys.modules[__name__])
+
 
 def locate_field_spans(text,lines):
     spans,_=text_fields(text);dates,_=date_fields(text);spans.update(dates)
@@ -334,6 +316,71 @@ def sheet_data(state):
         result.append(dict(key=record['key'],record_id=record['record_id'],cells=cells,notes=record['notes'],fragments=record.get('fragments',[]),field_coverage=field_coverage(cells)))
     return result
 
+def record_image_files(record,pages):
+    """Keep a continued record associated with every original source image."""
+    by_name={p['name']:p['file'] for p in pages}
+    known={p['file'] for p in pages};found=set()
+    for fragment in record.get('fragments',[]):
+        filename=fragment.get('file')
+        if filename in known:found.add(filename)
+        elif fragment.get('page') in by_name:found.add(by_name[fragment['page']])
+    for line in record.get('lines',[]):
+        if line.get('page') in by_name:found.add(by_name[line['page']])
+    return [p['file'] for p in pages if p['file'] in found]
+
+def workspace_page(state,offset=0,limit=50,image=None):
+    """Return bounded source evidence and cells; export still uses every record."""
+    if offset<0 or not 1<=limit<=50:raise ValueError('Invalid record window')
+    pages=state['pages']
+    if image is not None and image not in {p['file'] for p in pages}:raise ValueError('Unknown source image')
+    image_records={p['file']:dict(records=0,shared=0,pending=0) for p in pages}
+    matching=[]
+    for index,record in enumerate(state['records']):
+        sources=record_image_files(record,pages)
+        available=record_ready(state,record)
+        for filename in sources:
+            image_records[filename]['records']+=int(available)
+            image_records[filename]['pending']+=int(not available)
+            image_records[filename]['shared']+=int(available and len(sources)>1)
+        if available and (image is None or image in sources):matching.append((index,record,sources))
+    total=len(matching)
+    offset=min(offset,max(0,((total-1)//limit)*limit))
+    window=matching[offset:offset+limit]
+    selected=[r for _,r,_ in window]
+    keys={r['key'] for r in selected}
+    available=len(ready_records(state));done=completed_pages(state)
+    def image_status(i,p):
+        if state['status']=='ready' or i<done:return 'continuation' if image_records[p['file']]['pending'] else 'ready'
+        if state['status'] in ('cancelled','error'):return 'partial' if image_records[p['file']]['records'] else 'not_scanned'
+        return 'scanning' if i==done and state.get('scan_stats',{}).get('stage') in ('loading','reading','saving','cancelling') else 'waiting'
+    view=dict(state,records=selected,history=[],record_offset=offset,record_total=total,
+        project_record_total=len(state['records']),ready_record_total=available,pending_record_total=len(state['records'])-available,
+        completed_pages=done,review_allowed=state['status'] in ('ready','cancelled','error') or state.get('progressive_scan',False),image_filter=image,
+        image_navigation=[dict(file=p['file'],name=p['name'],number=i+1,status=image_status(i,p),**image_records[p['file']]) for i,p in enumerate(pages)])
+    for field in ('field_regions','field_decisions'):
+        view[field]={k:v for k,v in state.get(field,{}).items() if k.rsplit(':',1)[0] in keys}
+    reviewed=review_state(view)
+    for record,(index,_,sources) in zip(reviewed['records'],window):
+        record.update(project_row=index+1,source_images=sources)
+    ids={s['id'] for r in reviewed['records'] for line in r['lines'] for s in line['segments']}
+    reviewed['decisions']={k:v for k,v in state['decisions'].items() if k in ids}
+    reviewed.pop('field_crop_history',None)
+    return dict(state=reviewed,rows=sheet_data(view) if selected else [])
+
+def page_thumbnail(job,name):
+    if not re.fullmatch(r'page-\d+\.png',name):raise ValueError('Invalid source image')
+    directory=folder(job);source=directory/name;cached=directory/('thumb-'+name[:-4]+'.jpg')
+    if not cached.exists() or cached.stat().st_mtime_ns<source.stat().st_mtime_ns:
+        with Image.open(source) as image:
+            image.thumbnail((120,160))
+            with image.convert('RGB') as thumbnail:
+                data=io.BytesIO();thumbnail.save(data,format='JPEG',quality=75)
+        temporary=directory/('thumb-'+uuid.uuid4().hex+'.tmp')
+        try:
+            temporary.write_bytes(data.getvalue());temporary.replace(cached)
+        finally:temporary.unlink(missing_ok=True)
+    return cached.read_bytes()
+
 def export_data(state):
     decisions=state['decisions'];rows=[];review=[];raw=[]
     for record in state['records']:
@@ -354,7 +401,7 @@ def export_data(state):
                 if seg['category']!='single' or seg['id'] in decisions:
                     review.append([record['key'],seg['id'],seg['category'],seg['text'],decisions.get(seg['id'],''),'Confirmed' if seg['id'] in decisions else 'Unresolved'])
     if state.get('field_regions'):
-        rows=[[c['value'] for c in r['cells']] for r in sheet_data(state)]
+        if state.get('schema_version')!=2:rows=[[c['value'] for c in r['cells']] for r in sheet_data(state)]
         for key,selection in state['field_regions'].items():
             review.append([key.rsplit(':',1)[0],key.rsplit(':',1)[1],'User-selected field boundary',selection['first'],selection['last'],'Boundary confirmed; text still needs review'])
             if selection.get('kind')=='rectangles':
@@ -363,11 +410,12 @@ def export_data(state):
                     'Selection confirmed before OCR; model not retrained'])
     result=dict(rows=rows,review=review,lines=raw)
     if state.get('schema_version')==2:
-        sheet=sheet_data(state)
-        result.update(headers=HEADERS,rows=[[c['value'] for c in r['cells']] for r in sheet],
-            statuses=[[c['status'] for c in r['cells']] for r in sheet],schema_version=2,
+        result.update(headers=HEADERS,rows=[],statuses=[],schema_version=2,
             fragments=[[r['key'],f['page'],f['id'],f['status'],json.dumps(f['box']),' | '.join(r['notes'])] for r in state['records'] for f in r.get('fragments',[])])
-        for r in sheet:
+        for record in state['records']:
+            r=sheet_data(dict(state,records=[record]))[0]
+            result['rows'].append([c['value'] for c in r['cells']])
+            result['statuses'].append([c['status'] for c in r['cells']])
             for c in r['cells']:
                 for action in c.get('rule_actions',[]):
                     review.append([r['key'],HEADERS[c['field']],'Field-rule alternative filter',
@@ -381,7 +429,24 @@ def export_data(state):
         for issue in state.get('page_issues',[]):review.append(['','','Page review',issue,'','Needs review'])
     return result
 
+def export_project(job):
+    # Snapshot corrections and stable records, then release the shared state lock
+    # before generating Excel so OCR and other reviewers can keep saving.
+    with LOCK:
+        state=export_snapshot(load(job));export_lock=EXPORT_LOCKS.setdefault(job,threading.Lock())
+    with export_lock:
+        if (len(state['pages'])>20 or state.get('partial_export')) and state.get('schema_version')==2:
+            from batch_export import write_workbook
+            write_workbook(folder(job)/'converted.xlsx',state,export_data,HEADERS)
+        else:
+            payload=folder(job)/'export.json';payload.write_text(json.dumps(export_data(state),ensure_ascii=False),encoding='utf-8')
+            result=subprocess.run([str(NODE),str(ROOT/'app_export.mjs'),str(payload)],capture_output=True,text=True,timeout=max(90,3*len(state['pages'])))
+            if result.returncode:raise RuntimeError('Excel export failed: '+result.stderr[-500:])
+    return dict(url='/download?job='+job+('&partial=1' if state.get('partial_export') else ''),partial=state.get('partial_export',False),records=len(state['records']),
+                completed_pages=completed_pages(state),pages=len(state['pages']))
+
 CROPS=CropService(load,save,folder,LOCK,write_examples)
+UPLOADS=BatchUpload(load,save,folder,LOCK,enqueue_scan)
 
 class Handler(BaseHTTPRequestHandler):
     def respond(self,value,status=200,mime='application/json',filename=None):
@@ -413,16 +478,19 @@ class Handler(BaseHTTPRequestHandler):
             if u.path=='/api/capabilities':
                 try:
                     from rapidocr_onnxruntime import RapidOCR
-                    return self.respond({'scan':True})
+                    return self.respond({'scan':True,'cancel_scan':True,'progressive_review':True})
                 except (ImportError,OSError) as error:
                     return self.respond({'scan':False,'message':'New scans are unavailable because an OCR component cannot load. Saved scans can still be reviewed and exported.','detail':str(error)})
             if u.path=='/api/jobs':return self.respond(list_jobs())
             if u.path=='/api/schema':return self.respond({'headers':HEADERS,'version':2})
             job=q.get('job',[''])[0]
+            if u.path=='/api/workspace':return self.respond(workspace_page(load(job),int(q.get('offset',['0'])[0]),image=q.get('image',[None])[0]))
+            if u.path=='/thumbnail':return self.respond(page_thumbnail(job,q.get('name',[''])[0]),mime='image/jpeg')
             if u.path=='/api/progress':return self.respond(get_progress(job))
             if u.path=='/api/state':return self.respond(review_state(load(job)))
             if u.path=='/api/field-crop-status':return self.respond(CROPS.status(job,q.get('operation',[''])[0]))
-            if u.path=='/api/sheet':return self.respond(sheet_data(load(job)))
+            if u.path=='/api/sheet':
+                state=load(job);return self.respond(sheet_data(dict(state,records=ready_records(state))))
             if u.path=='/api/learning':
                 with LOCK:return self.respond(write_examples(load(job),folder(job)))
             if u.path=='/api/fields':
@@ -431,7 +499,7 @@ class Handler(BaseHTTPRequestHandler):
                 name=q.get('name',[''])[0]
                 if not ASSET.fullmatch(name):raise ValueError('Invalid image')
                 return self.respond((folder(job)/name).read_bytes(),mime='image/png')
-            if u.path=='/download':return self.respond((folder(job)/'converted.xlsx').read_bytes(),mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',filename='Pixel-converted.xlsx')
+            if u.path=='/download':return self.respond((folder(job)/'converted.xlsx').read_bytes(),mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',filename='Pixel-partial.xlsx' if parse_qs(u.query).get('partial')==['1'] else 'Pixel-converted.xlsx')
             self.respond({'error':'Not found'},404)
         except Exception as e:self.respond({'error':str(e)},400)
     def do_POST(self):
@@ -443,6 +511,9 @@ class Handler(BaseHTTPRequestHandler):
             if not 0<size<40_000_000:raise ValueError('Upload limit is 40 MB per request')
             data=json.loads(self.rfile.read(size));route=urlparse(self.path).path
             self.diagnostic_job=data.get('job')
+            if route=='/api/upload/create':return self.respond(UPLOADS.create(data))
+            if route=='/api/upload/page':return self.respond(UPLOADS.page(data))
+            if route=='/api/upload/finish':return self.respond(UPLOADS.finish(data.get('job')))
             if route=='/api/test-report':
                 job=data.get('job');snapshot=None;live=None;state_error=None
                 if job:
@@ -476,16 +547,21 @@ class Handler(BaseHTTPRequestHandler):
                 for i,(image,source_name,digest) in enumerate(decoded):
                     name=f'page-{i}.png';image.save(folder(job)/name)
                     state['pages'].append(dict(name=source_name,file=name,sha256=digest))
-                save(state);publish_progress(state,'queued',page_count=len(state['pages']),queued_at=time.time())
-                threading.Thread(target=scan,args=(state,),daemon=True).start();return self.respond({'id':job})
+                save(state);enqueue_scan(state);return self.respond({'id':job})
+            if route=='/api/cancel':return self.respond(cancel_scan(data['job']),202)
             if route=='/api/retry':
                 with LOCK:state=retry_scan(load(data['job']))
                 return self.respond({'id':state['id']})
             if route=='/api/field-crop':return self.respond(CROPS.submit(data),202)
+            if route=='/api/export':return self.respond(export_project(data['job']))
             with LOCK:
                 state=load(data['job'])
-                if state['status']!='ready':raise ValueError('Scan is not ready')
+                editable=ready_records(state)
+                if not editable:raise ValueError('No records are ready for review yet.')
+                if 'record' in data and data['record'] not in {r['key'] for r in editable}:
+                    raise ValueError('This record is still being scanned or waiting for its continuation.')
                 if route=='/api/boundary':
+                    if state['status']=='scanning':raise ValueError('Finish or cancel scanning before changing record boundaries.')
                     change_boundary(state,data['record'],data['action'],data.get('fragment'))
                     save(state);return self.respond({'saved':True})
                 if route=='/api/field-region':
@@ -507,7 +583,7 @@ class Handler(BaseHTTPRequestHandler):
                     state['history'].append(dict(field_region=key,selection=selection))
                     save(state);return self.respond({'saved':True})
                 if route=='/api/confirm':
-                    segments={s['id']:s for r in state['records'] for l in review_record(state,r)['lines'] for s in l['segments']}
+                    segments={s['id']:s for r in editable for l in review_record(state,r)['lines'] for s in l['segments']}
                     key=data['segment'];value=data['value']
                     if key not in segments or not isinstance(value,str) or len(value)>200:raise ValueError('Invalid correction')
                     for r in state['records']:
@@ -518,7 +594,7 @@ class Handler(BaseHTTPRequestHandler):
                     else:state['decisions'][key]=value
                     save(state);summary=write_examples(state,folder(state['id']));return self.respond({'saved':True,'learning':summary})
                 if route=='/api/verify-line':
-                    lines={l['id']:l for r in state['records'] for l in review_record(state,r)['lines']}
+                    lines={l['id']:l for r in editable for l in review_record(state,r)['lines']}
                     if data['line'] not in lines:raise ValueError('Unknown text region')
                     line=lines[data['line']]
                     current_text=render_segments(line['segments'],state['decisions'],marked=False)
@@ -537,11 +613,6 @@ class Handler(BaseHTTPRequestHandler):
                     save(state)
                     if state.get('field_regions',{}).get(key,{}).get('kind')=='rectangles':write_examples(state,folder(state['id']))
                     return self.respond({'saved':True})
-                if route=='/api/export':
-                    payload=folder(state['id'])/'export.json';payload.write_text(json.dumps(export_data(state),ensure_ascii=False),encoding='utf-8')
-                    result=subprocess.run([str(NODE),str(ROOT/'app_export.mjs'),str(payload)],capture_output=True,text=True,timeout=90)
-                    if result.returncode:raise RuntimeError('Excel export failed: '+result.stderr[-500:])
-                    return self.respond({'url':'/download?job='+state['id']})
             raise ValueError('Unknown action')
         except Exception as e:self.respond({'error':str(e)},400)
 
@@ -554,10 +625,16 @@ if __name__=='__main__':
             if b'Pixel' in urllib.request.urlopen(url,timeout=1).read():
                 webbrowser.open(url);sys.exit(0)
         except (OSError,urllib.error.URLError):pass
-    # Interrupted scans are explicit failures after a restart; saved reviews survive.
+    # New checkpoints are complete pages. Legacy partial pages are replayed by
+    # prepare_resume; finalized pages and human corrections are preserved.
+    recovering=[]
     for p in DATA.glob('*/state.json'):
         s=json.loads(p.read_text(encoding='utf-8'))
-        if s['status']=='scanning':s.update(status='error',error='Scan interrupted. Upload again to rescan.');save(s)
+        if s['status']=='scanning':recovering.append(s)
+    server=ThreadingHTTPServer(('127.0.0.1',args.port),Handler)
+    # A previously active batch keeps priority over batches that never started.
+    for s in sorted(recovering,key=lambda s:(not bool((s.get('scan_stats') or {}).get('started_at')),(s.get('scan_stats') or {}).get('queued_at',0))):
+        enqueue_scan(s)
     print('Pixel review: '+url,flush=True)
     if '--open' in sys.argv:threading.Timer(1,lambda:webbrowser.open(url)).start()
-    ThreadingHTTPServer(('127.0.0.1',args.port),Handler).serve_forever()
+    server.serve_forever()

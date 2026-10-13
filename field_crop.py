@@ -14,6 +14,7 @@ import numpy as np
 from PIL import Image
 from character_review import read_line
 from field_constraints import PRINTED
+from scan_state import record_ready
 
 MAX_REGIONS=8
 ASSET=re.compile(r'(?:line-\d+|page-\d+|crop-[a-f0-9]{32}-\d+|selection-[a-f0-9]{32}-\d+)\.png')
@@ -33,10 +34,10 @@ def frames(state,record):
 
 
 def target(state,record_key,field):
-    if state['status']!='ready':raise ValueError('Wait for the page scan to finish before selecting a field.')
     if type(field) is not int or field not in PRINTED:raise ValueError('Select a printed field.')
     record=next((r for r in state['records'] if r['key']==record_key),None)
     if record is None:raise ValueError('This record no longer exists. Reopen the project.')
+    if not record_ready(state,record):raise ValueError('This record is still being scanned or waiting for its continuation.')
     key=record_key+':'+str(field)
     if key in state.get('field_decisions',{}):raise ValueError('Reset the whole-field confirmation before changing its image selection.')
     return record,key

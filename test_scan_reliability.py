@@ -22,6 +22,7 @@ class ScanReliabilityTests(unittest.TestCase):
     def test_temporary_windows_replace_denial_retries(self):
         original=Path.replace;calls=[]
         def replace(path,target):
+            if Path(target).name!='state.json':return original(path,target)
             calls.append(path)
             if len(calls)<3:raise PermissionError('Windows sharing violation')
             return original(path,target)
@@ -38,6 +39,15 @@ class ScanReliabilityTests(unittest.TestCase):
         self.assertEqual(app.load(self.state['id'])['decisions'],{})
         recovery=list(app.folder(self.state['id']).glob('state-*.tmp'))
         self.assertEqual(json.loads(recovery[0].read_text())['decisions'],{'char-1':'B'})
+
+    def test_summary_cache_failure_does_not_fail_the_saved_correction(self):
+        original=Path.write_text
+        def write(path,*args,**kwargs):
+            if path.name.startswith('summary-'):raise PermissionError('Cache locked')
+            return original(path,*args,**kwargs)
+        self.state['decisions']={'char-1':'B'}
+        with patch.object(Path,'write_text',write):app.save(self.state)
+        self.assertEqual(app.load(self.state['id'])['decisions'],{'char-1':'B'})
 
     def test_concurrent_polling_and_saves_keep_valid_json(self):
         errors=[]

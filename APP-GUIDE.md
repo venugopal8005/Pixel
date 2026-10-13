@@ -1,5 +1,81 @@
 # Pixel spreadsheet review
 
+## Review while scanning and cancellation — October 12, 2026
+
+Upload progress and project-name errors appear above the image list. After the
+upload finishes, completed pages become available in the spreadsheet while
+remaining pages scan. The sidebar shows which images are ready, scanning or waiting.
+A record with an unfinished continuation is held until the next image resolves
+it. New results do not replace an open cell editor or an unsaved selection.
+
+**Cancel scan** also works for a queued project. Confirming cancellation stops
+between OCR operations; the current operation may need a moment to finish.
+Uploaded images, readings and saved corrections are kept. Cancelled partial
+records remain editable and carry a warning to check their missing fields.
+**Retry these images** starts a separate attempt and leaves the stopped project intact.
+
+During scanning or after cancellation, **Export available** produces a labelled
+partial workbook with available records and saved corrections. Unprocessed images
+are not represented as completed records. Uncertain text retains `[i/l]` and `[?]`.
+After the scan finishes, **Export all** includes the whole project.
+
+Completed pages are checkpointed. Restarting Pixel resumes interrupted scans from
+the last saved page, preserving corrections. An interrupted, unpublished page is
+read again. Record split/join controls become available after scanning stops.
+
+## Browse records by source image
+
+Open a project to see **All images** in one spreadsheet. The image sidebar has
+numbered thumbnails and a search box for filenames or image numbers. Clicking
+a thumbnail filters the sheet to records linked to that image. **Previous image**
+and **Next image** move through the original upload order. The chosen image and
+record group survive a browser refresh.
+
+A record continuing onto another image stays one combined record. It appears
+under either source image, with a **Continued · images …** label. Both views use
+the same corrections, and the cell editor retains the field crops, characters,
+and full source references from both pages. Sidebar counts can overlap because
+of these shared records; **All images** counts each record once.
+
+Groups of 50 and **Review next unsure cell** stay within the selected image.
+Choose **All images** to review across the entire project. Row numbers in the
+cell editor and diagnostic reports remain the original project record numbers.
+An image with no detected records has an explicit empty view and a link to open
+the source image; it does not silently show another image's records.
+
+After scanning finishes, **Export all** exports the full project, including records outside the
+current image filter and any saved corrections. It does not duplicate continued
+records. Filtering never runs OCR again or changes the saved record boundaries.
+
+## Large batches — October 11, 2026
+
+The spreadsheet app accepts **1–400 JPEG or PNG images per project**, up to
+**25 MB and 20 megapixels per image**. The header shows the selected count and
+the number of images in the project. Images transfer one at a time, in the
+displayed order, so the combined batch is no longer constrained by one 40 MB
+request. Duplicate filenames or identical images are rejected.
+
+Scanning starts only after every image is saved. If an upload is interrupted,
+open its saved project and select the same files in the same order, then use
+**Resume upload & scan**. Already-saved images are validated without duplicating
+them. After scanning starts, keep Pixel running and the computer awake. Completed
+pages now resume after a server restart as described above. **Retry these images**
+is for a cancelled or failed attempt and creates a new project.
+
+Review shows **50 records at a time**, with Previous/Next group controls. The
+cell editor also moves across groups. Counts of unsure cells and located fields
+refer to the displayed group; the image count and total record count cover the
+whole project. Final Excel export includes every record and saved correction;
+exports during scanning are labelled as partial.
+Large projects use a record-at-a-time workbook writer to limit export memory.
+
+Verification includes 400 synthetic image transfers through the HTTP API,
+ordered processing with a simulated recognizer, full-project Excel export,
+401-image rejection, retries, and record-window boundaries. This checks batch
+handling, not OCR accuracy or the running time of 400 real pages. Scan time and
+disk usage grow with the number and complexity of pages. The older `/legacy`
+upload screen retains its small, single-request upload path.
+
 ## Field rules — October 2, 2026
 
 Field types now filter OCR alternatives in located cells and in the character editor.
@@ -32,9 +108,14 @@ page after installing this update.
 
 Scanning now shows a progress bar, current page/record region, text regions read,
 record candidates and elapsed time. Progress polling uses a small live status
-response. The spreadsheet opens when the scan finishes. Failed scans show a
+response. The spreadsheet now opens as completed pages become available. Failed scans show a
 recovery panel with **Retry these images**; retry keeps the old attempt and scans
 the saved images into a new project. Refresh older browser tabs after an update.
+
+Pixel scans one project at a time. Waiting projects now show the running project's
+name, live page progress, a link to open it, other waiting projects, and time spent
+waiting. The scan progress bar starts when OCR starts. Uploading the same images
+as another project creates another scan; it does not speed up the existing one.
 
 The Windows checkpoint replacement error is addressed by coordinating all state
 file reads/writes and retrying temporary sharing violations. The last good file
@@ -49,7 +130,7 @@ file locks, concurrent readers/writers, failed-scan recovery and progress status
 See `DEMO-GUIDE.md` for the demonstration flow and source files.
 
 The home page now lists named projects. Choose **New project**, name the batch,
-and select 1–20 images. Filenames are naturally sorted; use the up/down buttons
+and select 1–400 images. Filenames are naturally sorted; use the up/down buttons
 to check page order before **Create project & scan**. Open an existing project
 to resume saved corrections. The beta editor remains optional: export immediately
 or inspect individual cells and then export again.
