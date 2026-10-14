@@ -19,7 +19,13 @@ def find_span(text,field):
     if other:stop=other.start()
     # Seven trailing digits are an observed candidate pattern, not a validated universal rule.
     ending=re.search(r'(?<!\d)\d{7}(?!\d)',text[anchor.end():stop])
-    if not ending:return None
+    if not ending:
+        # Short identifiers in the new manual have no fixed digit count. A
+        # self-contained non-whitespace code is safe to locate; never swallow
+        # following occupation/name tokens to invent a complete identifier.
+        token=re.match(r'[^\s]+',text[anchor.end():stop])
+        if not token or not re.search(r'\d',token.group()):return None
+        return anchor.start(),anchor.end()+token.end()
     return anchor.start(),anchor.end()+ending.end()
 
 def main():

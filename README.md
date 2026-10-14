@@ -1,5 +1,14 @@
 # Pixel OCR development baseline
 
+## Borderless records and client rules — October 14, 2026
+
+Pages without usable dividers now use printed record IDs plus adjacent Lead IDs
+to locate record starts. The supplied two-record crop produces two records.
+The new client conventions cover dates, amounts, ZIPs, names, reference codes,
+physical line wraps and remarks, while preserving raw OCR and uncertainty markers.
+See [CLIENT-RULES.md](CLIENT-RULES.md) for precedence, limitations and retesting.
+Complete record detection still does not guarantee every field is located.
+
 ## Faint record borders — October 13, 2026
 
 Pages with very light borders now use a fallback that checks column edges and

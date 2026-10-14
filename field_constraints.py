@@ -40,7 +40,8 @@ def effective_kind(field, plain, offset):
     if kind == 'date':
         # Only a complete numeric date gives safe numeric positions. Month and
         # weekday spellings, including misspellings, are never guessed.
-        return 'numeric_date' if re.fullmatch(r'[0-9OoIl ]{1,2}/[0-9OoIl ]{1,2}/[0-9OoIl ]{4}', plain) else 'mixed'
+        numeric=re.search(r'[0-9OoIl]{1,2}/[0-9OoIl]{1,2}/(?:[0-9OoIl]{4}|[0-9OoIl]{2})$',plain)
+        return 'numeric_date' if numeric and offset>=numeric.start() else 'mixed'
     return kind
 
 
@@ -71,6 +72,7 @@ def constrain_segment(field, segment, decisions, plain='', offset=0):
 def project_cell(cell, record, decisions):
     """Only located fields are eligible. Proposed crops stay unlocated."""
     from character_review import render_segments
+    from client_rules import join_parts
     field = cell['field']
     cell['field_rule'] = {k: RULES[field][k] for k in ('name', 'kind', 'instruction', 'min_length', 'max_length')}
     cell['field_rule']['description'] = DESCRIPTIONS[RULES[field]['kind']]
@@ -99,8 +101,8 @@ def project_cell(cell, record, decisions):
             marked.append(part['marked'])
             output.append(part['raw'])
         offset += len(part['raw'])
-    cell['value'] = ' '.join(''.join(marked).split()) or '[?]'
-    cell['plain'] = ' '.join(''.join(output).split())
+    cell['value'] = join_parts(field,[dict(text=t,line_break=p.get('line_break',False)) for t,p in zip(marked,cell['parts'])]) or '[?]'
+    cell['plain'] = join_parts(field,[dict(text=t,line_break=p.get('line_break',False)) for t,p in zip(output,cell['parts'])])
     cell['pending'] = sum(
         segments[r['id']]['category'] != 'single' and r['id'] not in decisions and
         not cell['rule_segments'].get(r['id'], {}).get('resolved')

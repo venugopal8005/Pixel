@@ -212,7 +212,9 @@ def locate_field_spans(text,lines):
     return spans
 
 def field_analysis(record,decisions):
+    from client_rules import physical_break
     text='';original='';pieces=[];lines=[];original_lines=[];positions=[]
+    breaks={}
     for line in record['lines']:
         line_text='';original_line='';separators=[];original_separators=[]
         for seg in line['segments']:
@@ -226,6 +228,8 @@ def field_analysis(record,decisions):
         lines.append(dict(text=line_text,box=line['box'],separator_offsets=separators))
         original_lines.append(dict(text=original_line,box=line['box'],separator_offsets=original_separators))
         text+=line_text+'\n';original+=original_line+'\n';pieces.append((len(text)-1,len(text),' ','\n',None))
+        index=len(lines)-1
+        if index+1<len(record['lines']):breaks[len(text)-1]=physical_break(line,record['lines'][index+1])
     spans=locate_field_spans(text,lines)
     # An edit to an anchor or identifier must not make a previously located cell
     # disappear. Retain original boundaries, translating offsets after edits.
@@ -259,7 +263,7 @@ def field_analysis(record,decisions):
             complete=lo>=a and hi<=b
             shown=clipped if marked==raw else marked if complete else '[?]'
             parts.append(shown)
-            field_parts[field].append(dict(marked=shown,raw=clipped,id=segment_id if complete else None))
+            field_parts[field].append(dict(marked=shown,raw=clipped,id=segment_id if complete else None,line_break=breaks.get(lo,False)))
         values.append(' '.join(''.join(parts).split()) or '[?]')
     evidence={}
     # Field zero is the displayed record ID; share the printed ID's evidence.

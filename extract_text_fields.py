@@ -6,6 +6,7 @@ from pathlib import Path
 from extract_dates_postal import locate as date_spans
 from extract_remaining_fields import locate_remaining
 from extract_fields import loan_section
+from client_rules import property_anchor,name_boundary
 
 ROOT=Path(__file__).resolve().parent
 FIELDS=(4,5,6,7,10,11,12,14,16,17,22,26,27,28,31,32,33,34,35)
@@ -18,9 +19,8 @@ def split_person(text,offset):
     if title:
         end=title.end()
     else:
-        space=re.search(r'\s+',text)
-        if not space:return None
-        end=space.start()
+        end=name_boundary(text)
+        if end is None:return None
     remainder=end
     while remainder<len(text) and text[remainder].isspace():remainder+=1
     if remainder==len(text):return None
@@ -28,7 +28,7 @@ def split_person(text,offset):
 
 def locate(text):
     found={};issues={}
-    phone=re.search(r'\d{11}-\d{4}',text)
+    phone=property_anchor(text)
     lid=re.search(r'L[i1]d/[A-Za-z0-9/]+-[A-Za-z0-9]+-\d+',text,re.I)
     if lid and phone:
         head=text[lid.end():phone.start()]
@@ -51,7 +51,7 @@ def locate(text):
         # Purpose word variants are locators only: return their original OCR spelling.
         tail=text[phone.end():]
         secured,_=loan_section(text)
-        purpose=re.match(r'\s*(?:Debt|Debit|dect)\s*c[a-z]{3,22}?tionn?',tail,re.I)
+        purpose=re.match(r'\s*(?:Debt|Debit|dect|Oebt)\s*c[a-z]{3,22}?tionn?',tail,re.I)
         if purpose:
             start=phone.end()+purpose.start();end=phone.end()+purpose.end()
             found[16]=(start,end)

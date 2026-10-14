@@ -169,7 +169,7 @@ class BatchTests(unittest.TestCase):
         state=fixture()
         state.update(schema_version=2,created_date='10/11/2026')
         state['field_decisions']={'record-1:18':'903210','record-1:19':'474','record-1:20':'6.87',
-                                  'record-1:8':'00123','record-1:6':'=2+2','record-1:4':'col'}
+                                  'record-1:8':'00123','record-1:6':'=2+2','record-1:4':'col.'}
         target=app.DATA/'export.xlsx'
         write_workbook(target,state,app.export_data,app.HEADERS)
         book=load_workbook(target)

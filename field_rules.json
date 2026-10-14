@@ -1,6 +1,6 @@
 {
-  "version": 1,
-  "policy": "Use detailed XLSX field types and formatting; DOCX and Fields Only supply the 37-column layout. No missing values, fixed ID positions, or unspecified lengths are invented.",
+  "version": 2,
+  "policy": "October 2026 client instructions. Detailed training/error examples determine formatting. Printed IDs and literal spellings are preserved. Unknown OCR is not a missing source field; conflicting rules remain review warnings.",
   "fields": [
     {
       "index": 0,
@@ -15,7 +15,8 @@
         "section": "PERSONAL INFO"
       },
       "data_type": "Generated",
-      "instruction": "Generated from project metadata or actual review issues"
+      "instruction": "Generated from project metadata or actual review issues",
+      "line_break": "space"
     },
     {
       "index": 1,
@@ -30,7 +31,8 @@
         "section": "PERSONAL INFO"
       },
       "data_type": "Printed record identifier",
-      "instruction": "Preserve printed record ID"
+      "instruction": "Preserve printed record ID",
+      "line_break": "space"
     },
     {
       "index": 2,
@@ -45,7 +47,8 @@
         "section": "PERSONAL INFO"
       },
       "data_type": "Generated",
-      "instruction": "Generated from project metadata or actual review issues"
+      "instruction": "Generated from project metadata or actual review issues",
+      "line_break": "space"
     },
     {
       "index": 3,
@@ -61,13 +64,14 @@
         "row": 2
       },
       "data_type": "String + Numeric + Special Character",
-      "instruction": "JUST ENTER AS SHOWN IN THE IMAGE"
+      "instruction": "JUST ENTER AS SHOWN IN THE IMAGE",
+      "line_break": "no_space"
     },
     {
       "index": 4,
       "column": 5,
       "name": "APPLICANT FIRST NAME",
-      "kind": "text",
+      "kind": "mixed",
       "format": "first_name",
       "min_length": null,
       "max_length": null,
@@ -77,7 +81,8 @@
         "row": 3
       },
       "data_type": "String",
-      "instruction": "First letter uppercase, remaining letters lowercase."
+      "instruction": "Proper case after spaces, digits and symbols; retain digits/punctuation. A trailing period is invalid.",
+      "line_break": "space"
     },
     {
       "index": 5,
@@ -93,7 +98,8 @@
         "row": 4
       },
       "data_type": "String",
-      "instruction": "First letter uppercase and the remaining letters lowercase. After a special character or number, the first letter should be uppercase and the remaining letters lowercase."
+      "instruction": "Proper case after spaces, digits and symbols; retain digits/punctuation. A trailing period is invalid.",
+      "line_break": "space"
     },
     {
       "index": 6,
@@ -109,13 +115,14 @@
         "row": 5
       },
       "data_type": "String + Numeric + Special Character",
-      "instruction": "JUST ENTER AS SHOWN IN THE IMAGE"
+      "instruction": "JUST ENTER AS SHOWN IN THE IMAGE",
+      "line_break": "symbol_before_no_space_except_ampersand"
     },
     {
       "index": 7,
       "column": 8,
       "name": "CITY",
-      "kind": "text",
+      "kind": "mixed",
       "format": "literal",
       "min_length": null,
       "max_length": null,
@@ -125,7 +132,8 @@
         "row": 6
       },
       "data_type": "String",
-      "instruction": "JUST ENTER AS SHOWN IN THE IMAGE"
+      "instruction": "JUST ENTER AS SHOWN IN THE IMAGE",
+      "line_break": "space"
     },
     {
       "index": 8,
@@ -133,15 +141,16 @@
       "name": "ZIP CODE",
       "kind": "digits",
       "format": "digits",
-      "min_length": null,
-      "max_length": null,
+      "min_length": 1,
+      "max_length": 6,
       "source": {
         "file": "INSTRUCTIONS.xlsx",
         "sheet": "Mortgage Instructions",
         "row": 7
       },
       "data_type": "Numeric",
-      "instruction": "JUST ENTER AS SHOWN IN THE IMAGE"
+      "instruction": "1–6 digits, preserve leading zeros. All-zero values are invalid.",
+      "line_break": "no_space"
     },
     {
       "index": 9,
@@ -157,13 +166,14 @@
         "row": 8
       },
       "data_type": "String + Numeric + Special Character",
-      "instruction": "Must be entered in MM/DD/YYYY Format"
+      "instruction": "Preserve weekday and spelling; format recognizable dates MM/DD/YYYY or MM/DD/YY. Do not infer a century.",
+      "line_break": "symbol_before_no_space_except_ampersand"
     },
     {
       "index": 10,
       "column": 11,
       "name": "CO-APPLICANT FIRST NAME",
-      "kind": "text",
+      "kind": "mixed",
       "format": "first_name",
       "min_length": null,
       "max_length": null,
@@ -173,7 +183,8 @@
         "row": 9
       },
       "data_type": "String",
-      "instruction": "First letter uppercase, remaining letters lowercase."
+      "instruction": "Proper case after spaces, digits and symbols; retain digits/punctuation. A trailing period is invalid.",
+      "line_break": "space"
     },
     {
       "index": 11,
@@ -189,13 +200,14 @@
         "row": 10
       },
       "data_type": "String + Special Charater",
-      "instruction": "First letter uppercase and the remaining letters lowercase. After a special character or number, the first letter should be uppercase and the remaining letters lowercase."
+      "instruction": "Proper case after spaces, digits and symbols; retain digits/punctuation. A trailing period is invalid.",
+      "line_break": "space"
     },
     {
       "index": 12,
       "column": 13,
       "name": "BEST TIME TO CALL",
-      "kind": "text",
+      "kind": "mixed",
       "format": "literal",
       "min_length": null,
       "max_length": null,
@@ -205,7 +217,8 @@
         "row": 11
       },
       "data_type": "String",
-      "instruction": "JUST ENTER AS SHOWN IN THE IMAGE"
+      "instruction": "JUST ENTER AS SHOWN IN THE IMAGE",
+      "line_break": "space"
     },
     {
       "index": 13,
@@ -221,14 +234,15 @@
         "row": 12
       },
       "data_type": "Generated",
-      "instruction": "Describe actual unresolved fields and rule warnings; otherwise Not Applicable.",
-      "source_example_instruction": "DOB,ALN ARE INVALID AND CALN IS MISSING."
+      "instruction": "Uppercase field abbreviations for established INVALID/MISSING/MERGE facts, final period; otherwise Not Applicable. OCR uncertainty stays in review status.",
+      "source_example_instruction": "DOB,ALN ARE INVALID AND CALN IS MISSING.",
+      "line_break": "space"
     },
     {
       "index": 14,
       "column": 15,
       "name": "TYPE OF PROPERTY",
-      "kind": "text",
+      "kind": "mixed",
       "format": "literal",
       "min_length": null,
       "max_length": null,
@@ -238,7 +252,8 @@
         "row": 14
       },
       "data_type": "String + Special Charater",
-      "instruction": "JUST ENTER AS SHOWN IN THE IMAGE"
+      "instruction": "JUST ENTER AS SHOWN IN THE IMAGE",
+      "line_break": "space"
     },
     {
       "index": 15,
@@ -254,14 +269,15 @@
         "row": 15
       },
       "data_type": "Numeric + Special Character",
-      "instruction": "Must be entered in the format: 10018-25789",
-      "pattern": "[0-9]{5}-[0-9]{5}"
+      "instruction": "Digits on both sides of exactly one hyphen; group lengths are not fixed.",
+      "pattern": "[0-9]{5}-[0-9]{5}",
+      "line_break": "no_space"
     },
     {
       "index": 16,
       "column": 17,
       "name": "PURPOSE OF LOAN",
-      "kind": "text",
+      "kind": "mixed",
       "format": "literal",
       "min_length": null,
       "max_length": null,
@@ -271,13 +287,14 @@
         "row": 17
       },
       "data_type": "String",
-      "instruction": "JUST ENTER AS SHOWN IN THE IMAGE"
+      "instruction": "JUST ENTER AS SHOWN IN THE IMAGE",
+      "line_break": "space"
     },
     {
       "index": 17,
       "column": 18,
       "name": "MORTGAGE TYPE",
-      "kind": "text",
+      "kind": "mixed",
       "format": "literal",
       "min_length": null,
       "max_length": null,
@@ -287,7 +304,8 @@
         "row": 18
       },
       "data_type": "String",
-      "instruction": "JUST ENTER AS SHOWN IN THE IMAGE"
+      "instruction": "JUST ENTER AS SHOWN IN THE IMAGE",
+      "line_break": "space"
     },
     {
       "index": 18,
@@ -303,7 +321,8 @@
         "row": 19
       },
       "data_type": "Numeric + Special Character",
-      "instruction": "Use commas after every 3 digits and 2 digits after the decimal point."
+      "instruction": "Dollar amount, thousands commas and two decimals. Truncate excess decimals; preserve source symbols and nonnumeric text.",
+      "line_break": "no_space"
     },
     {
       "index": 19,
@@ -319,7 +338,8 @@
         "row": 20
       },
       "data_type": "Numeric + Special Character",
-      "instruction": "Must be entered with Months"
+      "instruction": "Must be entered with Months",
+      "line_break": "space"
     },
     {
       "index": 20,
@@ -335,7 +355,8 @@
         "row": 21
       },
       "data_type": "Numeric + Special Character",
-      "instruction": "Must be entered with %"
+      "instruction": "Must be entered with %",
+      "line_break": "space"
     },
     {
       "index": 21,
@@ -351,13 +372,14 @@
         "row": 22
       },
       "data_type": "Numeric + Special Character",
-      "instruction": "Use commas after every 3 digits and 2 digits after the decimal point."
+      "instruction": "Dollar amount, thousands commas and two decimals. Truncate excess decimals; preserve source symbols and nonnumeric text.",
+      "line_break": "no_space"
     },
     {
       "index": 22,
       "column": 23,
       "name": "EXISTING LOAN",
-      "kind": "text",
+      "kind": "mixed",
       "format": "literal",
       "min_length": null,
       "max_length": null,
@@ -367,7 +389,8 @@
         "row": 23
       },
       "data_type": "String",
-      "instruction": "JUST ENTER AS SHOWN IN THE IMAGE"
+      "instruction": "JUST ENTER AS SHOWN IN THE IMAGE",
+      "line_break": "space"
     },
     {
       "index": 23,
@@ -383,7 +406,8 @@
         "row": 24
       },
       "data_type": "Numeric + Special Character",
-      "instruction": "Use commas after every 3 digits and 2 digits after the decimal point."
+      "instruction": "Dollar amount, thousands commas and two decimals. Truncate excess decimals; preserve source symbols and nonnumeric text.",
+      "line_break": "no_space"
     },
     {
       "index": 24,
@@ -399,7 +423,8 @@
         "row": 25
       },
       "data_type": "Numeric + Special Character",
-      "instruction": "Use commas after every 3 digits and 2 digits after the decimal point."
+      "instruction": "Dollar amount, thousands commas and two decimals. Truncate excess decimals; preserve source symbols and nonnumeric text.",
+      "line_break": "no_space"
     },
     {
       "index": 25,
@@ -415,14 +440,15 @@
         "row": 26
       },
       "data_type": "Generated",
-      "instruction": "Describe actual unresolved fields and rule warnings; otherwise Not Applicable.",
-      "source_example_instruction": "PV IS INVALID."
+      "instruction": "Uppercase field abbreviations for established INVALID/MISSING/MERGE facts, final period; otherwise Not Applicable. OCR uncertainty stays in review status.",
+      "source_example_instruction": "PV IS INVALID.",
+      "line_break": "space"
     },
     {
       "index": 26,
       "column": 27,
       "name": "LENDER NAME",
-      "kind": "text",
+      "kind": "mixed",
       "format": "literal",
       "min_length": null,
       "max_length": null,
@@ -432,13 +458,14 @@
         "row": 28
       },
       "data_type": "String",
-      "instruction": "JUST ENTER AS SHOWN IN THE IMAGE"
+      "instruction": "JUST ENTER AS SHOWN IN THE IMAGE",
+      "line_break": "space"
     },
     {
       "index": 27,
       "column": 28,
       "name": "LOAN OFFICER FIRST NAME",
-      "kind": "text",
+      "kind": "mixed",
       "format": "first_name",
       "min_length": null,
       "max_length": null,
@@ -448,7 +475,8 @@
         "row": 29
       },
       "data_type": "String",
-      "instruction": "First letter uppercase, remaining letters lowercase."
+      "instruction": "Proper case after spaces, digits and symbols; retain digits/punctuation. A trailing period is invalid.",
+      "line_break": "space"
     },
     {
       "index": 28,
@@ -464,7 +492,8 @@
         "row": 30
       },
       "data_type": "String",
-      "instruction": "First letter uppercase and the remaining letters lowercase. After a special character or number, the first letter should be uppercase and the remaining letters lowercase."
+      "instruction": "Proper case after spaces, digits and symbols; retain digits/punctuation. A trailing period is invalid.",
+      "line_break": "space"
     },
     {
       "index": 29,
@@ -480,7 +509,8 @@
         "row": 31
       },
       "data_type": "String + Numeric + Special Character",
-      "instruction": "JUST ENTER AS SHOWN IN THE IMAGE"
+      "instruction": "Preserve literal reference; requires # and /. No fixed character positions.",
+      "line_break": "no_space"
     },
     {
       "index": 30,
@@ -496,13 +526,14 @@
         "row": 32
       },
       "data_type": "String + Numeric + Special Character",
-      "instruction": "JUST ENTER AS SHOWN IN THE IMAGE"
+      "instruction": "Preserve literal reference; requires #. No fixed character positions.",
+      "line_break": "no_space"
     },
     {
       "index": 31,
       "column": 32,
       "name": "OCCUPATION",
-      "kind": "text",
+      "kind": "mixed",
       "format": "literal",
       "min_length": null,
       "max_length": null,
@@ -512,13 +543,14 @@
         "row": 33
       },
       "data_type": "String + Special Charater",
-      "instruction": "JUST ENTER AS SHOWN IN THE IMAGE"
+      "instruction": "JUST ENTER AS SHOWN IN THE IMAGE",
+      "line_break": "space"
     },
     {
       "index": 32,
       "column": 33,
       "name": "OTHER INCOME",
-      "kind": "text",
+      "kind": "mixed",
       "format": "literal",
       "min_length": null,
       "max_length": null,
@@ -528,13 +560,14 @@
         "row": 34
       },
       "data_type": "String",
-      "instruction": "JUST ENTER AS SHOWN IN THE IMAGE"
+      "instruction": "JUST ENTER AS SHOWN IN THE IMAGE",
+      "line_break": "space"
     },
     {
       "index": 33,
       "column": 34,
       "name": "CREDIT CARD ISSUER",
-      "kind": "text",
+      "kind": "mixed",
       "format": "literal",
       "min_length": null,
       "max_length": null,
@@ -544,13 +577,14 @@
         "row": 35
       },
       "data_type": "String",
-      "instruction": "JUST ENTER AS SHOWN IN THE IMAGE"
+      "instruction": "JUST ENTER AS SHOWN IN THE IMAGE",
+      "line_break": "space"
     },
     {
       "index": 34,
       "column": 35,
       "name": "CREDIT CARD TYPE",
-      "kind": "text",
+      "kind": "mixed",
       "format": "credit_card",
       "min_length": null,
       "max_length": null,
@@ -560,13 +594,14 @@
         "row": 36
       },
       "data_type": "String",
-      "instruction": "Must be entered with Credit Card"
+      "instruction": "Must be entered with Credit Card",
+      "line_break": "space"
     },
     {
       "index": 35,
       "column": 36,
       "name": "CREDIT SCORE",
-      "kind": "text",
+      "kind": "mixed",
       "format": "literal",
       "min_length": null,
       "max_length": null,
@@ -576,7 +611,8 @@
         "row": 37
       },
       "data_type": "String",
-      "instruction": "JUST ENTER AS SHOWN IN THE IMAGE"
+      "instruction": "JUST ENTER AS SHOWN IN THE IMAGE",
+      "line_break": "space"
     },
     {
       "index": 36,
@@ -592,8 +628,16 @@
         "row": 38
       },
       "data_type": "Generated",
-      "instruction": "Describe actual unresolved fields and rule warnings; otherwise Not Applicable.",
-      "source_example_instruction": "N.A."
+      "instruction": "Uppercase field abbreviations for established INVALID/MISSING/MERGE facts, final period; otherwise Not Applicable. OCR uncertainty stays in review status.",
+      "source_example_instruction": "N.A.",
+      "line_break": "space"
     }
+  ],
+  "sources": [
+    "MORTAGE INSTRUCTIONS.docx",
+    "LINE BREAK INSTRUCTION.pdf",
+    "Training Notes.pdf",
+    "Remarks For MT.xlsx",
+    "Error file for MT (1).xlsx"
   ]
 }

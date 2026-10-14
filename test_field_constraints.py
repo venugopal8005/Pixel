@@ -26,7 +26,8 @@ class FieldConstraintTests(unittest.TestCase):
 
     def test_rulebook_covers_all_columns_without_invented_lengths(self):
         self.assertEqual([r['name'] for r in RULES.values()], HEADERS)
-        self.assertTrue(all(r['min_length'] is None and r['max_length'] is None for r in RULES.values()))
+        self.assertTrue(all(r['min_length'] is None and r['max_length'] is None for f,r in RULES.items() if f!=8))
+        self.assertEqual((RULES[8]['min_length'],RULES[8]['max_length']),(1,6))
 
     def test_numeric_alternative_is_used_in_ui_and_export_without_changing_source(self):
         state=selected_field(8,'O0123',['O','0']);before=copy.deepcopy(state)
@@ -54,7 +55,7 @@ class FieldConstraintTests(unittest.TestCase):
 
     def test_text_fields_filter_digits_but_mixed_identifiers_do_not(self):
         city=self.cell(selected_field(7,'0akland',['0','O']),7)
-        self.assertEqual(city['value'],'Oakland');self.assertEqual(city['pending'],0)
+        self.assertEqual(city['value'],'[0/O]akland');self.assertEqual(city['pending'],1)
         for field in (3,6,5,11,28,29,30):
             cell=self.cell(selected_field(field,'B123',['B','8']),field)
             self.assertIn('[B/8]',cell['value']);self.assertEqual(cell['pending'],1)
@@ -100,11 +101,11 @@ class FieldConstraintTests(unittest.TestCase):
             self.assertEqual(cell['value'],expected);self.assertEqual(cell['pending'],0)
 
     def test_literal_spelling_name_case_and_conflicting_property_length(self):
-        self.assertEqual(apply_rule(4,'aLFRED bOB')[0],'Alfred bob')
+        self.assertEqual(apply_rule(4,'aLFRED bOB')[0],'Alfred Bob')
         self.assertEqual(apply_rule(5,'swapna*GUDISI.2smith')[0],'Swapna*Gudisi.2Smith')
         self.assertEqual(apply_rule(16,'Debt consalidation')[0],'Debt consalidation')
         value,issues=apply_rule(15,'95279148317-2465')
-        self.assertEqual(value,'95279148317-2465');self.assertTrue(issues)
+        self.assertEqual(value,'95279148317-2465');self.assertFalse(issues)
 
     def test_segment_rule_does_not_convert_unknown_or_user_decision(self):
         seg=dict(id='s',text='O',options=['O','0'],category='unrecognized')

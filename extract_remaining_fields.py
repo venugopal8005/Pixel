@@ -2,6 +2,7 @@
 import re
 from extract_dates_postal import locate as date_spans
 from extract_reference_codes import find_span
+from client_rules import property_anchor,name_boundary
 
 def nonempty_lines(text,start,end):
     return [(start+m.start(),start+m.end()) for m in re.finditer(r'[^\n]+',text[start:end]) if m.group().strip()]
@@ -11,9 +12,8 @@ def split_name(text,start,end):
     match=re.match(r'(?:Mrs|Miss|Mrr|Mr|Ms|Maj|Col|Dr)(?:\.+|(?=\s))',s,re.I)
     if match:cut=match.end()
     else:
-        space=re.search(r'\s+',s)
-        if not space:return {}
-        cut=space.start()
+        cut=name_boundary(s)
+        if cut is None:return {}
     rest=cut
     while rest<len(s) and s[rest].isspace():rest+=1
     if rest>=len(s):return {}
@@ -36,7 +36,7 @@ def locate_remaining(text):
                         locality=(lines[-2][0],locality[1])
                     found[6]=(start,locality[0]);found[7]=locality
     utr=find_span(text,29)
-    phone=re.search(r'\d{11}-\d{4}',text)
+    phone=property_anchor(text)
     secured=re.search(r'Secured\s*Loan',text,re.I)
     if utr and phone and secured and phone.end()<secured.start()<utr[0]:
         amounts=re.match(r'[\s.:]*(\d+(?:\.\d+)?)[\s]+(\d+(?:\.\d+)?)(?!\d)(?=$|[\s.]|[A-Z]{3})',text[secured.end():utr[0]])

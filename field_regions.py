@@ -12,11 +12,14 @@ def entries(record):
     return [(line,seg) for line in record['lines'] for seg in line['segments']]
 
 def evidence(record,selected,decisions,candidate=False):
+    from client_rules import physical_break
     refs=[];sources=[];plain=[];marked=[];parts=[]
+    previous=None
     for line in record['lines']:
         picked=[s for l,s in selected if l['id']==line['id']]
         if not picked:continue
-        if parts:parts.append(dict(id=None,raw=' ',marked=' '))
+        if parts:parts.append(dict(id=None,raw=' ',marked=' ',line_break=physical_break(previous,line)))
+        previous=line
         parts.extend(dict(id=s['id'],raw=decisions.get(s['id'],s['text']),marked=render_segments([s],decisions)) for s in picked)
         refs.extend(dict(id=s['id'],line=line['id'],editable=True) for s in picked)
         plain.append(render_segments(picked,decisions,marked=False));marked.append(render_segments(picked,decisions))

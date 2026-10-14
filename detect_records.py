@@ -51,7 +51,8 @@ def ruled_blocks(image):
             # occupied row (+2), so subtracting 2 clips source text pixels.
             crop_bottom=min(height,y1) if open_bottom else y1-2
             result.append(dict(column=col,block=index,box=[left+3,y0+3,right-2,crop_bottom],
-                               first_in_column=index==0,open_bottom=open_bottom,short_fragment=y1-y0<35))
+                               first_in_column=index==0,open_bottom=open_bottom,short_fragment=y1-y0<35,
+                               internal_record_rules=len(boundaries)>2))
     return result
 
 def faint_rule_blocks(image):
@@ -111,6 +112,83 @@ def blocks(image):
     except ValueError as original:
         try:return faint_rule_blocks(image)
         except ValueError:raise original
+
+
+def record_id_blocks(image, engine, check_cancel=lambda: None):
+    """Fallback layout from printed ID + adjacent Lead ID, never amounts alone.
+
+    OCR is used only to locate headers. Keep all pixels in each column, including
+    a leading continuation. Unreadable identifiers remain unassigned fragments.
+    """
+    check_cancel()
+    reading, _ = engine(np.asarray(image.convert('RGB'))[:, :, ::-1].copy(), use_cls=False)
+    check_cancel()
+    regions=[]
+    for points, text, confidence in reading or []:
+        pts=np.asarray(points)
+        regions.append(dict(text=text, x0=float(pts[:,0].min()), x1=float(pts[:,0].max()),
+                            y0=float(pts[:,1].min()), y1=float(pts[:,1].max())))
+    headers=[]
+    lead=re.compile(r'L[iI1l]d\s*/\s*[B8]',re.I)
+    for region in regions:
+        match=re.match(r'^\s*([0-9OIlSBZ]{10})(?=\s|L[iI1l]d/|$)',region['text'])
+        if not match:continue
+        height=region['y1']-region['y0']
+        row=[r for r in regions if abs((r['y0']+r['y1'])-(region['y0']+region['y1']))<height
+             and r['x0']>=region['x0']-2]
+        # A separate or merged Lead ID on this physical row is required. This
+        # excludes property values, reference codes and ten-digit amounts.
+        if not any(lead.search(r['text']) and r['x0']-region['x1']<image.width*.25 for r in row):continue
+        token=match.group(1)
+        headers.append(dict(**region, record_id=token if token.isdigit() else None))
+    if not headers:raise ValueError('No record-start ID with an adjacent Lead ID was located; inspect layout.')
+    clusters=[]
+    tolerance=max(12,image.width*.035)
+    for header in sorted(headers,key=lambda r:r['x0']):
+        if not clusters or header['x0']-clusters[-1][0]['x0']>tolerance:clusters.append([header])
+        else:clusters[-1].append(header)
+    if len(clusters)>2:raise ValueError('Record headers do not align into one or two columns; inspect layout.')
+    cuts=[0,image.width]
+    if len(clusters)==2:
+        right_start=min(r['x0'] for r in clusters[1])
+        left_start=max(r['x0'] for r in clusters[0])
+        if right_start-left_start<image.width*.30:raise ValueError('Record header columns are too close to separate safely.')
+        # Find a true empty gutter to the left of the second header column.
+        dark=np.asarray(image.convert('L'))<160
+        lo=int(max(left_start+image.width*.25,right_start-image.width*.12));hi=int(right_start)
+        empty=groups(np.where(dark[:,lo:hi].sum(axis=0)==0)[0])
+        if not empty:raise ValueError('No empty gutter between record-ID columns; inspect layout.')
+        gutter=max(empty,key=len);cuts=[0,lo+(gutter[0]+gutter[-1])//2,image.width]
+        if any(r['x0']<cuts[1]-3 and r['x1']>cuts[1]+3 for r in regions):
+            raise ValueError('OCR text crosses the proposed column gutter; inspect layout.')
+    result=[]
+    dark=np.asarray(image.convert('L'))<160
+    # Border-only strips are not continuation text. Ignore long rules when
+    # checking occupancy, but keep the source pixels in the resulting crops.
+    ink=dark.astype(np.uint8)*255
+    vertical=cv2.morphologyEx(ink,cv2.MORPH_OPEN,np.ones((max(50,image.height//8),1),np.uint8))
+    horizontal=cv2.morphologyEx(ink,cv2.MORPH_OPEN,np.ones((1,max(80,image.width//5)),np.uint8))
+    rules=cv2.dilate(np.maximum(vertical,horizontal),np.ones((3,3),np.uint8))
+    dark=dark & (rules==0)
+    for col,cluster in enumerate(clusters):
+        left,right=cuts[col:col+2];ordered=sorted(cluster,key=lambda r:r['y0'])
+        starts=[]
+        for h in ordered:
+            y=max(0,int(h['y0'])-3)
+            # Extend upwards only into the blank gap immediately above a header.
+            while y>0 and not dark[y-1,left:right].any():y-=1
+            starts.append(y)
+        boundaries=[0]+starts+[image.height]
+        for i,(top,bottom) in enumerate(zip(boundaries,boundaries[1:])):
+            if bottom<=top or not dark[top:bottom,left:right].any():continue
+            header=None if i==0 else ordered[i-1]
+            result.append(dict(column=col,block=len(result),box=[left,top,right,bottom],
+                first_in_column=not any(b['column']==col for b in result),
+                open_bottom=bottom==image.height,layout_method='record_id_headers',
+                detected_record_id=header['record_id'] if header else None,
+                header_evidence=header['text'] if header else '',
+                short_fragment=bottom-top<35))
+    return result
 
 
 def header_crop(crop):

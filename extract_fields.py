@@ -10,6 +10,7 @@ import numpy as np
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from PIL import Image
+from client_rules import property_anchor
 
 ROOT=Path(__file__).resolve().parent
 BASE=ROOT/'outputs/ocr-baseline'
@@ -53,11 +54,18 @@ def loan_section(text, separators=()):
     'Secured Loan' can itself be a mortgage type. Prefer the label after the
     four financial values; a repeated label without that evidence is ambiguous.
     """
-    phone=re.search(r'\d{11}-\d{4}',text)
+    phone=property_anchor(text)
     if not phone:return None,[]
     labels=list(SECURED_LOAN.finditer(text,phone.end()))
+    # A misspelled Existing Loan label is still literal source text. Only use a
+    # broader label candidate when four separate financial values support it.
+    candidates={m.span():m for m in labels}
+    for candidate in re.finditer(r'\b[A-Za-z]{3,14}\s+L[o0]an\b',text[phone.end():],re.I):
+        start=phone.end()+candidate.start()
+        match=re.compile(r'\b[A-Za-z]{3,14}\s+L[o0]an\b',re.I).match(text,start)
+        candidates[match.span()]=match
     supported=[]
-    for label in labels:
+    for label in candidates.values():
         start,end=phone.end(),label.start()
         window,boundaries=separated_text(text[start:end],{i-start for i in separators if start<i<end})
         tokens=list(FINANCIAL_TOKEN.finditer(window))
@@ -112,7 +120,7 @@ def locate(lines):
     found={}; issues={}
     ident=re.search(r'\b\d{10}\b',text[:50])
     lid=re.search(r'L[i1]d/[A-Za-z0-9/]+-[A-Za-z0-9]+-\d+',text)
-    phone=re.search(r'\d{11}-\d{4}',text)
+    phone=property_anchor(text)
     for field,match in ((1,ident),(3,lid),(15,phone)):
         if match: found[field]=match.span()
         else: issues[field]='Anchor not recognized'

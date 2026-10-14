@@ -1,28 +1,32 @@
 """Provisional date/postal anchors from auto-detected records, without Excel cues."""
 import html,json,re
 from pathlib import Path
+from client_rules import property_anchor
 ROOT=Path(__file__).resolve().parent
 DATE=re.compile(r'(?:[A-Za-z]{2,12}day[\s.,:]*)?(?:\d{1,2}/\d{1,2}/\d{4}|(?:[A-Za-z]{3,14}[\s.,:]*\d{1,2}|\d{1,2}[\s.,:]+[A-Za-z]{3,14})[\s.,:]*\d{4})(?!\d)',re.I)
 
 def locate(text):
     # Stop before the account-like identifier to avoid loan data and trailing codes.
-    phone=re.search(r'\d{11}-\d{4}',text)
+    phone=property_anchor(text)
     prefix=text[:phone.start()] if phone else text
     # Ignore the first ID/reference line. Dates belong in the following address block.
     first_newline=prefix.find('\n')
     offset=first_newline+1 if first_newline>=0 else 0
     candidates=[]
-    for match in re.finditer(r'\d{1,2}/\d{1,2}/\d{4}(?!\d)',prefix[offset:]):
+    for match in re.finditer(r'\d{1,2}[/.-]\d{1,2}[/.-](?:\d{4}|\d{2})(?!\d)',prefix[offset:]):
         candidates.append((offset+match.start(),offset+match.end()))
     for weekday in re.finditer(r'[A-Za-z]{2,12}da+y[\s.,:]*',prefix[offset:],re.I):
         a=offset+weekday.start();start=offset+weekday.end()
         year=re.search(r'(?:18|19|20)\d{2}(?!\d)',prefix[start:start+55])
         if year:candidates.append((a,start+year.end()))
+        else:
+            short=re.match(r'\d{1,2}[/.-]\d{1,2}[/.-]\d{2}(?!\d)',prefix[start:])
+            if short:candidates.append((a,start+short.end()))
     # A weekday and slash date can describe the same source span.
     candidates=[span for span in candidates if not any(other!=span and other[0]<=span[0] and other[1]>=span[1] for other in candidates)]
     if len(candidates)!=1:return {},f'Expected one date-like source span; found {len(candidates)}'
     a,b=candidates[0];found={9:(a,b)}
-    postal=re.search(r'(?<!\d)(\d{4,5})[\s.,:]*$',prefix[:a])
+    postal=re.search(r'(?<!\d)(\d{1,6})[\s.,:]*$',prefix[:a])
     if postal:found[8]=postal.span(1)
     return found,None
 

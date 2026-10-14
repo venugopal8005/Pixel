@@ -17,7 +17,7 @@ def scan_project(state,app):
         while not app.SCAN_LOCK.acquire(timeout=.25):app.check_scan_cancel(state)
         acquired=True;app.check_scan_cancel(state)
         from rapidocr_onnxruntime import RapidOCR
-        from detect_records import blocks
+        from detect_records import blocks,record_id_blocks
         start_page=prepare_resume(state)
         state['status']='scanning';state['progress']='Loading the local OCR model'
         counter=line_counter(state);seen={r['record_id'] for r in state['records'] if r['record_id']!='[?]'}
@@ -38,10 +38,22 @@ def scan_project(state,app):
             app.publish_progress(state,'reading',page=page_index+1,filename=page['name'],page_blocks=0,block=0,
                                  percent=round(100*page_index/max(1,len(state['pages'])),1))
             with Image.open(app.folder(state['id'])/page['file']) as source:image=source.convert('RGB')
-            try:page_blocks=blocks(image)
+            try:
+                page_blocks=blocks(image)
+                # Outer frames alone are not evidence that a column is a single
+                # record. Check printed starts when no internal dividers exist.
+                if page_blocks and all(b.get('internal_record_rules') is False for b in page_blocks):
+                    try:
+                        identified=record_id_blocks(image,engine,lambda:app.check_scan_cancel(state))
+                        if len(identified)>len(page_blocks):page_blocks=identified
+                    except ValueError:pass
             except ValueError as error:
-                state['page_issues'].append(page['name']+': '+str(error))
-                page_blocks=[dict(column=0,block=0,box=[0,0,image.width,image.height],first_in_column=False,open_bottom=False,layout_failed=True)]
+                state['progress']=f'Finding record IDs on page {page_index+1}/{len(state["pages"])}'
+                app.publish_progress(state,'reading')
+                try:page_blocks=record_id_blocks(image,engine,lambda:app.check_scan_cancel(state))
+                except ValueError as fallback_error:
+                    state['page_issues'].append(page['name']+': '+str(error)+' '+str(fallback_error))
+                    page_blocks=[dict(column=0,block=0,box=[0,0,image.width,image.height],first_in_column=False,open_bottom=False,layout_failed=True)]
             if previous and not app.adjacent_pages(previous['page'],page['name']):
                 previous['record']['notes'].append('Page order has a gap or reversal; continuation was not joined.')
                 previous['record']['review_ready']=True
@@ -52,6 +64,12 @@ def scan_project(state,app):
                 state['progress']=f'Page {page_index+1}/{len(state["pages"])} · record region {block_index+1}/{len(page_blocks)} · {counter} text regions read'
                 app.publish_progress(state,'reading',page=page_index+1,filename=page['name'],block=block_index+1,page_blocks=len(page_blocks))
                 crop=image.crop(block['box']);record_id,raw=app.read_header(engine,crop)
+                if block.get('layout_method')=='record_id_headers':
+                    # Header locator covers arbitrary image scale. Never turn a
+                    # leading continuation into a record based on a stray number.
+                    located=block.get('detected_record_id')
+                    record_id=located
+                    raw=block.get('header_evidence') or raw
                 app.check_scan_cancel(state)
                 if block.get('layout_failed'):record_id=None
                 joined=bool(not record_id and block['first_in_column'] and previous and previous['open_bottom']
@@ -70,6 +88,8 @@ def scan_project(state,app):
                     column=block['column'],header_ocr=raw,status='continuation_inferred' if joined else ('record_start' if record_id else 'unassigned'),
                     open_bottom=block['open_bottom'])
                 if block.get('layout_method'):fragment['layout_method']=block['layout_method']
+                if block.get('layout_method')=='record_id_headers':
+                    record['notes'].append('Record start located using printed ID and adjacent Lead ID; boundary is provisional.')
                 record.setdefault('fragments',[]).append(fragment)
                 if block.get('layout_failed'):record['notes'].append('Page layout was not recognized. Entire page retained as an unassigned fragment; it may contain several records.')
                 if block.get('short_fragment'):record['notes'].append('Short text-bearing fragment retained; inspect its record assignment.')
